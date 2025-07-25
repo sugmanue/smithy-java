@@ -192,10 +192,19 @@ public class JavaHttpClientTransport implements ClientTransport<HttpRequest, Htt
             return "http-java";
         }
 
-        // TODO: Determine what configuration is actually needed.
+        // TODO: Determine what configuration is also needed.
         @Override
         public JavaHttpClientTransport createTransport(Document node) {
-            return new JavaHttpClientTransport();
+            setHostProperties();
+            var versionNode = node.asStringMap().get("version");
+            HttpClient httpClient;
+            if (versionNode != null) {
+                var version = HttpVersion.from(versionNode.asString());
+                httpClient = HttpClient.newBuilder().version(smithyToHttpVersion(version)).build();
+            } else {
+                httpClient = HttpClient.newHttpClient();
+            }
+            return new JavaHttpClientTransport(httpClient);
         }
 
         @Override
