@@ -3,7 +3,7 @@ $version: "2"
 namespace smithy.example.mcp
 
 use aws.protocols#restJson1
-use amazon.smithy.llm#prompts
+use smithy.ai#prompts
 
 @restJson1
 @prompts({

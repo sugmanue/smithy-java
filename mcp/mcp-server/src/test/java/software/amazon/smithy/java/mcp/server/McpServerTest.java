@@ -660,7 +660,7 @@ public class McpServerTest {
 
                     namespace smithy.test
 
-                    use amazon.smithy.llm#prompts
+                    use smithy.ai#prompts
 
                     /// A TestService
                     @aws.protocols#awsJson1_0
@@ -752,7 +752,7 @@ public class McpServerTest {
 
                     namespace smithy.test.args
 
-                    use amazon.smithy.llm#prompts
+                    use smithy.ai#prompts
                     use aws.protocols#awsJson1_0
 
                     @awsJson1_0
@@ -780,7 +780,7 @@ public class McpServerTest {
 
                     namespace smithy.test.edge
 
-                    use amazon.smithy.llm#prompts
+                    use smithy.ai#prompts
                     use aws.protocols#awsJson1_0
 
                     @awsJson1_0

@@ -8,8 +8,7 @@ dependencies {
     val smithyVersion: String by project
 
     // Include the mcp-traits module for the @prompts trait
-    smithyBuild(project(":mcp:mcp-traits"))
-    implementation(project(":mcp:mcp-traits"))
+    implementation(project(":smithy-ai-traits"))
     
     // Standard Smithy dependencies
     smithyBuild("software.amazon.smithy.java:plugins:$smithyJavaVersion")

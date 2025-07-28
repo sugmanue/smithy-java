@@ -1,6 +1,6 @@
 $version: "2"
 
-namespace amazon.smithy.llm
+namespace smithy.ai
 
 // Prompt template trait - applied at operation level to provide guidance to LLMs
 @trait(selector: ":is(service, resource, operation)")
@@ -13,6 +13,7 @@ map prompts {
 }
 
 /// Defines the structure of the prompt
+@private
 structure PromptTemplateDefinition {
     /// Description of when to use this operation
     @required
@@ -29,5 +30,6 @@ structure PromptTemplateDefinition {
     preferWhen: String
 }
 
+@private
 @idRef(failWhenMissing: true, selector: "structure")
 string ArgumentShape

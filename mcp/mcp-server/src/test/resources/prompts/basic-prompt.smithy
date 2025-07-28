@@ -1,6 +1,6 @@
 namespace com.example
 
-use amazon.smithy.llm#prompts
+use smithy.ai#prompts
 
 @prompts({
     test_prompt: {

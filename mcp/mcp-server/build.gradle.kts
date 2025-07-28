@@ -16,7 +16,7 @@ dependencies {
     implementation(project(":codecs:json-codec", configuration = "shadow"))
     implementation(project(":mcp:mcp-schemas"))
     implementation(project(":mcp:mcp-bundle-api"))
-    implementation(project(":mcp:mcp-traits"))
+    implementation(project(":smithy-ai-traits"))
     testRuntimeOnly(libs.smithy.aws.traits)
     testRuntimeOnly(project(":aws:client:aws-client-awsjson"))
 }

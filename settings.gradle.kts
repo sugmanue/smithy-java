@@ -9,6 +9,9 @@ pluginManagement {
 
 rootProject.name = "smithy-java"
 
+// AI
+include(":smithy-ai-traits")
+
 // Common modules
 include(":context")
 include(":core")
@@ -105,7 +108,6 @@ include(":mcp:mcp-server")
 include(":mcp:mcp-cli")
 include(":mcp:mcp-cli-api")
 include(":mcp:mcp-bundle-api")
-include(":mcp:mcp-traits")
 
 include(":model-bundle")
 include(":model-bundle:model-bundle-api")

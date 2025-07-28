@@ -1,6 +1,6 @@
 namespace com.example
 
-use amazon.smithy.llm#prompts
+use smithy.ai#prompts
 
 @prompts({
     search_users: { description: "Search for users in the system by various criteria", template: "Search for users where {{searchCriteria}}. Use pagination with limit={{limit}} if many results expected.", arguments: SearchUsersInput, preferWhen: "User wants to find specific users or browse user lists" }

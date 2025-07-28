@@ -3,10 +3,10 @@ plugins {
     alias(libs.plugins.smithy.gradle.jar)
 }
 
-description = "MCP Traits"
+description = "Smithy AI Traits"
 
-extra["displayName"] = "Smithy :: Java :: MCP Traits"
-extra["moduleName"] = "software.amazon.smithy.java.mcp.traits"
+extra["displayName"] = "Smithy :: Java :: AI Traits"
+extra["moduleName"] = "software.amazon.smithy.ai.traits"
 
 dependencies {
     api(libs.smithy.model)

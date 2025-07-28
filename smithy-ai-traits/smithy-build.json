@@ -4,7 +4,7 @@
   "plugins": {
     "trait-codegen": {
       "package": "software.amazon.smithy.ai",
-      "namespace": "amazon.smithy.llm",
+      "namespace": "smithy.ai",
       "header": []
     }
   }

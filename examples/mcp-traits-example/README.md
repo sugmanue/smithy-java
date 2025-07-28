@@ -45,7 +45,7 @@ service UserService {
 ```smithy
 namespace com.example
 
-use amazon.smithy.llm#prompts
+use smithy.ai#prompts
 
 @prompts({
     search_users: { 
