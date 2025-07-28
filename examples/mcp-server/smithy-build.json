@@ -6,7 +6,7 @@
       "service": "smithy.example.mcp#EmployeeService",
       "namespace": "software.amazon.smithy.java.example.server.mcp",
       "headerFile": "license.txt",
-      "runtimeTraits": ["smithy.api#documentation", "smithy.api#examples" ]
+      "runtimeTraits": ["smithy.api#documentation", "smithy.api#examples", "amazon.smithy.llm#prompts" ]
     }
   }
 }
