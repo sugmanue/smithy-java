@@ -65,13 +65,16 @@ public abstract class BufferingFlatMapProcessor<I, O> implements
     @Override
     public final void onNext(I item) {
         try {
-            map(item).forEach(queue::add);
+            map(item).forEach(this::addToQueue);
         } catch (Exception e) {
             onError(new SerializationException("Malformed input", e));
             return;
         }
-
         flush();
+    }
+
+    private void addToQueue(O item) {
+        queue.add(item);
     }
 
     @Override
@@ -234,5 +237,4 @@ public abstract class BufferingFlatMapProcessor<I, O> implements
     private static long accumulate(AtomicLong l, long n) {
         return l.accumulateAndGet(n, BufferingFlatMapProcessor::accumulate);
     }
-
 }

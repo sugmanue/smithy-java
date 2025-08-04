@@ -5,13 +5,14 @@
 
 package software.amazon.smithy.java.aws.events;
 
-import java.util.function.Supplier;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventDecoder;
+
+import java.util.function.Supplier;
 
 public final class AwsEventShapeDecoder<E extends SerializableStruct> implements EventDecoder<AwsEventFrame> {
 
@@ -41,13 +42,11 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct> implements
         if (memberSchema == null) {
             throw new IllegalArgumentException("Unsupported event type: " + eventType);
         }
-
-        return eventBuilder.get()
-                .deserialize(
-                        new AwsEventDeserializer(
-                                memberSchema,
-                                codec.createDeserializer(message.getPayload())))
-                .build();
+        ShapeBuilder<E> builder = eventBuilder.get();
+        var codecDeserializer = codec.createDeserializer(message.getPayload());
+        var eventDeserializer = new AwsEventDeserializer(memberSchema, codecDeserializer);
+        E result = builder.deserialize(eventDeserializer).build();
+        return result;
     }
 
     private String getEventType(Message message) {

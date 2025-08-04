@@ -6,6 +6,7 @@
 package software.amazon.smithy.java.aws.events;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import software.amazon.eventstream.MessageDecoder;
@@ -23,11 +24,15 @@ public final class AwsFrameDecoder implements FrameDecoder<AwsEventFrame> {
     @Override
     public List<AwsEventFrame> decode(ByteBuffer buffer) {
         decoder.feed(buffer);
-        return decoder.getDecodedMessages()
-                .stream()
-                .map(AwsEventFrame::new)
-                .map(transformer)
-                .filter(Objects::nonNull)
-                .toList();
+        var messages = decoder.getDecodedMessages();
+        var result = new ArrayList<AwsEventFrame>();
+        for (var message : messages) {
+            var event = new AwsEventFrame(message);
+            var transformed = transformer.apply(event);
+            if (transformed != null) {
+                result.add(transformed);
+            }
+        }
+        return result;
     }
 }

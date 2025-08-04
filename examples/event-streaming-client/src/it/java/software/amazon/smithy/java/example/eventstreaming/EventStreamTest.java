@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -19,14 +20,16 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.java.client.core.endpoint.EndpointResolver;
 import software.amazon.smithy.java.example.eventstreaming.client.FizzBuzzServiceClient;
+import software.amazon.smithy.java.example.eventstreaming.model.BuzzEvent;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzInput;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzOutput;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzStream;
+import software.amazon.smithy.java.example.eventstreaming.model.FizzEvent;
 import software.amazon.smithy.java.example.eventstreaming.model.Value;
 import software.amazon.smithy.java.example.eventstreaming.model.ValueStream;
 
 // TODO: Update the test to create and run the server in setup before the test
-@Disabled("This test requires manually running a server locally and then verifies client behavior against it.")
+//@Disabled("This test requires manually running a server locally and then verifies client behavior against it.")
 public class EventStreamTest {
 
     @Test
@@ -46,6 +49,7 @@ public class EventStreamTest {
 
         AtomicLong receivedEvents = new AtomicLong();
         Set<Long> unbuzzed = new HashSet<>();
+        AtomicBoolean done = new AtomicBoolean();
         output.getStream().subscribe(new Flow.Subscriber<>() {
 
             private Flow.Subscription subscription;
@@ -62,7 +66,7 @@ public class EventStreamTest {
                 long value;
                 switch (item.type()) {
                     case fizz:
-                        value = item.getValue();
+                        value = item.<FizzEvent>getValue().getValue();
                         System.out.println("received fizz: " + value);
                         assertEquals(0, value % 3);
                         if (value % 5 == 0) {
@@ -70,7 +74,7 @@ public class EventStreamTest {
                         }
                         break;
                     case buzz:
-                        value = item.getValue();
+                        value = item.<BuzzEvent>getValue().getValue();
                         System.out.println("received buzz: " + value);
                         assertEquals(0, value % 5);
                         if (value % 3 == 0) {
@@ -85,16 +89,26 @@ public class EventStreamTest {
             }
 
             @Override
-            public void onError(Throwable throwable) {}
+            public void onError(Throwable throwable) {
+                System.out.println("output stream threw an exception: " + throwable);
+                done.set(true);
+            }
 
             @Override
             public void onComplete() {
                 System.out.println("output stream completed");
+                done.set(true);
             }
         });
 
-        // wait to receive events in the response stream
-        Thread.sleep(100);
+        var waits = 10;
+        do {
+            Thread.sleep(100);
+            --waits;
+            if (waits <= 0) {
+                throw new RuntimeException("Timed out waiting for completion");
+            }
+        } while (!done.get());
 
         assertTrue(unbuzzed.isEmpty(), unbuzzed.size() + " unbuzzed fizzes");
         assertEquals((range / 3) + (range / 5), receivedEvents.get());
