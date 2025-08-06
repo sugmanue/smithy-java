@@ -2,9 +2,10 @@
   "version": "1.0",
   "plugins": {
     "java-client-codegen": {
-      "service": "smithy.example.eventstreaming#FizzBuzzService",
+      "service": "smithy.example.eventstreaming#TickService",
       "namespace": "software.amazon.smithy.java.example.eventstreaming",
-      "protocol": "aws.protocols#restJson1"
+      "protocol": "smithy.protocols#rpcv2Cbor"
+      // "protocol": "aws.protocols#restJson1"
     }
   }
 }

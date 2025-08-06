@@ -6,8 +6,6 @@
 package software.amazon.smithy.java.core.serde.event;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Flow;
 import java.util.stream.Stream;
 import software.amazon.smithy.java.core.schema.SerializableStruct;

@@ -6,10 +6,15 @@
 package software.amazon.smithy.java.client.rpcv2;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
+import software.amazon.smithy.java.aws.events.AwsEventDecoderFactory;
+import software.amazon.smithy.java.aws.events.AwsEventEncoderFactory;
+import software.amazon.smithy.java.aws.events.AwsEventFrame;
 import software.amazon.smithy.java.cbor.Rpcv2CborCodec;
 import software.amazon.smithy.java.client.core.ClientProtocol;
 import software.amazon.smithy.java.client.core.ClientProtocolFactory;
@@ -18,10 +23,20 @@ import software.amazon.smithy.java.client.http.HttpClientProtocol;
 import software.amazon.smithy.java.client.http.HttpErrorDeserializer;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;
+import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
+import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
+import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.Unit;
 import software.amazon.smithy.java.core.serde.Codec;
+import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
+import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
+import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
+import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
+import software.amazon.smithy.java.core.serde.event.EventStreamFrameDecodingProcessor;
+import software.amazon.smithy.java.core.serde.event.EventStreamFrameEncodingProcessor;
+import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.java.http.api.HttpHeaders;
 import software.amazon.smithy.java.http.api.HttpRequest;
 import software.amazon.smithy.java.http.api.HttpResponse;
@@ -32,7 +47,8 @@ import software.amazon.smithy.protocol.traits.Rpcv2CborTrait;
 
 public final class RpcV2CborProtocol extends HttpClientProtocol {
     private static final Codec CBOR_CODEC = Rpcv2CborCodec.builder().build();
-    private static final List<String> CONTENT_TYPE = List.of("application/cbor");
+    private static final String PAYLOAD_MEDIA_TYPE = "application/cbor";
+    private static final List<String> CONTENT_TYPE = List.of(PAYLOAD_MEDIA_TYPE);
     private static final List<String> SMITHY_PROTOCOL = List.of("rpc-v2-cbor");
 
     private final ShapeId service;
@@ -41,10 +57,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     public RpcV2CborProtocol(ShapeId service) {
         super(Rpcv2CborTrait.ID);
         this.service = service;
-        this.errorDeserializer = HttpErrorDeserializer.builder()
-                .codec(CBOR_CODEC)
-                .serviceId(service)
-                .build();
+        this.errorDeserializer = HttpErrorDeserializer.builder().codec(CBOR_CODEC).serviceId(service).build();
     }
 
     @Override
@@ -60,38 +73,22 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             URI endpoint
     ) {
         var target = "/service/" + service.getName() + "/operation/" + operation.schema().id().getName();
+        var builder = HttpRequest.builder().method("POST").uri(endpoint.resolve(target));
 
-        Map<String, List<String>> headers;
-        DataStream body;
         if (Unit.ID.equals(operation.inputSchema().id())) {
             // Top-level Unit types do not get serialized
-            headers = Map.of(
-                    "smithy-protocol",
-                    SMITHY_PROTOCOL,
-                    "Accept",
-                    CONTENT_TYPE);
-            body = DataStream.ofEmpty();
+            builder.headers(HttpHeaders.of(headersForEmptyBody()))
+                    .body(DataStream.ofEmpty());
+        } else if (operation instanceof InputEventStreamingApiOperation<?, ?, ?> i) {
+            // Event streaming
+            builder.headers(HttpHeaders.of(headersForEventStreaming()))
+                    .body(getBodyForEventStreaming(getEventEncoderFactory(i), input));
         } else {
-            var sink = new ByteBufferOutputStream();
-            try (var serializer = CBOR_CODEC.createSerializer(sink)) {
-                input.serialize(serializer);
-            }
-            headers = Map.of(
-                    "Content-Type",
-                    CONTENT_TYPE,
-                    "smithy-protocol",
-                    SMITHY_PROTOCOL,
-                    "Accept",
-                    CONTENT_TYPE);
-            body = DataStream.ofByteBuffer(sink.toByteBuffer(), "application/cbor");
+            // Regular request
+            builder.headers(HttpHeaders.of(headers()))
+                    .body(getBody(input));
         }
-
-        return HttpRequest.builder()
-                .method("POST")
-                .uri(endpoint.resolve(target))
-                .headers(HttpHeaders.of(headers))
-                .body(body)
-                .build();
+        return builder.build();
     }
 
     @Override
@@ -102,6 +99,27 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             HttpRequest request,
             HttpResponse response
     ) {
+
+        if (operation instanceof OutputEventStreamingApiOperation<?, ?, ?> o) {
+            var builder = operation.outputBuilder();
+            DataStream bodyDataStream = bodyDataStream(response);
+            var eventDecoderFactory = getEventDecoderFactory(o);
+            var deserializer = new SpecificShapeDeserializer() {
+                @Override
+                public Flow.Publisher<? extends SerializableStruct> readEventStream(Schema schema) {
+                    return EventStreamFrameDecodingProcessor.create(bodyDataStream, eventDecoderFactory);
+                }
+            };
+            var deserializer2 = new SpecificShapeDeserializer() {
+                @Override
+                public <T> void readStruct(Schema schema, T state, StructMemberConsumer<T> consumer) {
+                    consumer.accept(state, schema, deserializer);
+                }
+            };
+            builder = builder.deserialize(deserializer2);
+            return CompletableFuture.completedFuture(builder.build());
+        }
+
         if (response.statusCode() != 200) {
             return errorDeserializer.createError(context, operation.schema().id(), typeRegistry, response)
                     .thenApply(e -> {
@@ -120,6 +138,70 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
                 .toCompletableFuture();
     }
 
+    private Flow.Publisher<ByteBuffer> getBodyForEventStreaming(
+            EventEncoderFactory<AwsEventFrame> eventStreamEncodingFactory,
+            SerializableStruct input
+    ) {
+        var serializer = new SpecificShapeSerializer() {
+            private Flow.Publisher<? extends SerializableStruct> eventStream;
+
+            @Override
+            public void writeEventStream(Schema schema, Flow.Publisher<? extends SerializableStruct> value) {
+                this.eventStream = value;
+            }
+            @Override
+            public void writeStruct(Schema schema, SerializableStruct struct) {
+                struct.serializeMembers(this);
+            }
+        };
+        input.serialize(serializer);
+        return EventStreamFrameEncodingProcessor.create(serializer.eventStream, eventStreamEncodingFactory);
+    }
+
+    private DataStream getBody(SerializableStruct input) {
+        var sink = new ByteBufferOutputStream();
+        try (var serializer = CBOR_CODEC.createSerializer(sink)) {
+            input.serialize(serializer);
+        }
+        return DataStream.ofByteBuffer(sink.toByteBuffer(), PAYLOAD_MEDIA_TYPE);
+    }
+
+    private Map<String, List<String>> headers() {
+        return Map.of("Content-Type", CONTENT_TYPE, "smithy-protocol", SMITHY_PROTOCOL, "Accept", CONTENT_TYPE);
+    }
+
+    private Map<String, List<String>> headersForEmptyBody() {
+        return Map.of("smithy-protocol", SMITHY_PROTOCOL, "Accept", CONTENT_TYPE);
+    }
+
+    private Map<String, List<String>> headersForEventStreaming() {
+        return Map.of("smithy-protocol", SMITHY_PROTOCOL,
+                "content-type", List.of("application/vnd.amazon.eventstream"),
+                "Accept", CONTENT_TYPE);
+    }
+
+    private EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
+            InputEventStreamingApiOperation<?, ?, ?> inputOperation
+    ) {
+        // TODO: this is where you'd plumb through Sigv4 support, another frame transformer?
+        return AwsEventEncoderFactory.forInputStream(inputOperation,
+                payloadCodec(),
+                PAYLOAD_MEDIA_TYPE,
+                (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
+    }
+
+    private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
+            OutputEventStreamingApiOperation<?, ?, ?> outputOperation
+    ) {
+        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(), f -> f);
+    }
+
+    private DataStream bodyDataStream(HttpResponse response) {
+        var contentType = response.headers().contentType();
+        var contentLength = response.headers().contentLength();
+        return DataStream.withMetadata(response.body(), contentType, contentLength, null);
+    }
+
     public static final class Factory implements ClientProtocolFactory<Rpcv2CborTrait> {
         @Override
         public ShapeId id() {
@@ -129,9 +211,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         @Override
         public ClientProtocol<?, ?> createProtocol(ProtocolSettings settings, Rpcv2CborTrait trait) {
             return new RpcV2CborProtocol(
-                    Objects.requireNonNull(
-                            settings.service(),
-                            "service is a required protocol setting"));
+                    Objects.requireNonNull(settings.service(), "service is a required protocol setting"));
         }
     }
 }

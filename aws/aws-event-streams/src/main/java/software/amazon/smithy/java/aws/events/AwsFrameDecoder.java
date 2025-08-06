@@ -8,7 +8,6 @@ package software.amazon.smithy.java.aws.events;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import software.amazon.eventstream.MessageDecoder;
 import software.amazon.smithy.java.core.serde.event.FrameDecoder;
 import software.amazon.smithy.java.core.serde.event.FrameTransformer;

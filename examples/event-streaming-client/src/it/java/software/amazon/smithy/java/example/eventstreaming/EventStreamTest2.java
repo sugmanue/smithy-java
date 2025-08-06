@@ -1,25 +1,8 @@
-/*
- * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
- * SPDX-License-Identifier: Apache-2.0
- */
-
 package software.amazon.smithy.java.example.eventstreaming;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
-
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.Flow;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.java.client.core.endpoint.EndpointResolver;
-import software.amazon.smithy.java.example.eventstreaming.client.FizzBuzzServiceClient;
+import software.amazon.smithy.java.example.eventstreaming.client.TickServiceClient;
 import software.amazon.smithy.java.example.eventstreaming.model.BuzzEvent;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzInput;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzOutput;
@@ -28,13 +11,24 @@ import software.amazon.smithy.java.example.eventstreaming.model.FizzEvent;
 import software.amazon.smithy.java.example.eventstreaming.model.Value;
 import software.amazon.smithy.java.example.eventstreaming.model.ValueStream;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+
 // TODO: Update the test to create and run the server in setup before the test
 //@Disabled("This test requires manually running a server locally and then verifies client behavior against it.")
-public class EventStreamTest {
+public class EventStreamTest2 {
 
     @Test
     public void fizzBuzz() throws InterruptedException {
-        var client = FizzBuzzServiceClient.builder()
+        var client = TickServiceClient.builder()
                 .endpointResolver(EndpointResolver.staticHost("http://localhost:8000"))
                 .build();
 

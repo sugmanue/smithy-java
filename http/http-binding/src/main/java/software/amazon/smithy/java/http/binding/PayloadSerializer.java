@@ -52,6 +52,12 @@ final class PayloadSerializer implements ShapeSerializer {
             Flow.Publisher<? extends SerializableStruct> value
     ) {
         payloadWritten = true;
+        try {
+            throw new RuntimeException("boom!");
+        } catch (RuntimeException e) {
+            System.out.println("=====================================");
+            e.printStackTrace();
+        }
         serializer.setEventStream(value);
     }
 

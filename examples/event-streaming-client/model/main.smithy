@@ -3,7 +3,17 @@ $version: "2.0"
 namespace smithy.example.eventstreaming
 
 use aws.protocols#restJson1
+use smithy.protocols#rpcv2Cbor
 
+@rpcv2Cbor
+@restJson1
+service TickService {
+    operations: [
+        FizzBuzz
+    ]
+}
+
+@rpcv2Cbor
 @restJson1
 service FizzBuzzService {
     operations: [

@@ -9,6 +9,7 @@ dependencies {
 
     smithyBuild("software.amazon.smithy.java:plugins:$smithyJavaVersion")
     implementation("software.amazon.smithy.java:aws-client-restjson:$smithyJavaVersion")
+    implementation("software.amazon.smithy.java:client-rpcv2-cbor:$smithyJavaVersion")
     implementation("software.amazon.smithy.java:client-core:$smithyJavaVersion")
 
     // Test dependencies
