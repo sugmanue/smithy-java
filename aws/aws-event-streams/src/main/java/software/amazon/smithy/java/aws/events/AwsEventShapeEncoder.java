@@ -6,9 +6,14 @@
 package software.amazon.smithy.java.aws.events;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -19,7 +24,7 @@ import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
-import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
+import software.amazon.smithy.java.core.serde.DelegatingShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.model.shapes.ShapeId;
@@ -55,16 +60,23 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         var os = new ByteArrayOutputStream();
         var typeHolder = new AtomicReference<String>();
         try (var baseSerializer = codec.createSerializer(os)) {
+            var serializer = new DelegatingShapeSerializer(baseSerializer) {
+                @Override
+                public void writeEventStream(Schema schema, Flow.Publisher<? extends SerializableStruct> value) {
+                    typeHolder.set("initial-request");
+                }
 
-            item.serializeMembers(new SpecificShapeSerializer() {
                 @Override
                 public void writeStruct(Schema schema, SerializableStruct struct) {
                     if (possibleTypes.contains(schema.memberName())) {
                         typeHolder.compareAndSet(null, schema.memberName());
                     }
-                    baseSerializer.writeStruct(schema, struct);
+                    super.writeStruct(schema, struct);
                 }
-            });
+            };
+
+            //item.serialize(serializer);
+            item.serializeMembers(serializer);
         }
 
         var headers = new HashMap<String, HeaderValue>();
@@ -72,6 +84,19 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         headers.put(":message-type", HeaderValue.fromString("event"));
         headers.put(":content-type", HeaderValue.fromString(payloadMediaType));
 
+        if (typeHolder.get().equals("initial-request")) {
+            var bytes = os.toByteArray();
+            if (bytes.length == 0) {
+                bytes = new byte[] { -65, -1 };
+            }
+            var message = new Message(headers, bytes);
+            try {
+                Files.write(Paths.get("/tmp/init-message"), message.toByteBuffer().array());
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return new AwsEventFrame(message);
+        }
         return new AwsEventFrame(new Message(headers, os.toByteArray()));
     }
 

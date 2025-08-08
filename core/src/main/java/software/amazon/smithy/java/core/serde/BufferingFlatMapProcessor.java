@@ -87,7 +87,9 @@ public abstract class BufferingFlatMapProcessor<I, O> implements
     @Override
     public final void onComplete() {
         terminalEvent.compareAndSet(null, COMPLETE_SENTINEL);
-        flush();
+        if (upstreamSubscription != null && downstream != null) {
+            flush();
+        }
     }
 
     @Override
@@ -103,7 +105,8 @@ public abstract class BufferingFlatMapProcessor<I, O> implements
 
     private void flush() {
         if (upstreamSubscription == null || downstream == null) {
-            onError(new IllegalStateException("flush() requested before upstream and downstream fully wired."));
+            // onError() -> flush() -> onError()
+            //onError(new IllegalStateException("flush() requested before upstream and downstream fully wired."));
             return;
         }
 

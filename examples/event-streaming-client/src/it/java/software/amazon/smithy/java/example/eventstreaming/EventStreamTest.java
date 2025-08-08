@@ -19,7 +19,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.java.client.core.endpoint.EndpointResolver;
-import software.amazon.smithy.java.example.eventstreaming.client.FizzBuzzServiceClient;
+//import software.amazon.smithy.java.example.eventstreaming.client.FizzBuzzServiceClient;
+import software.amazon.smithy.java.example.eventstreaming.client.TickServiceClient;
 import software.amazon.smithy.java.example.eventstreaming.model.BuzzEvent;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzInput;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzOutput;
@@ -34,7 +35,7 @@ public class EventStreamTest {
 
     @Test
     public void fizzBuzz() throws InterruptedException {
-        var client = FizzBuzzServiceClient.builder()
+        var client = TickServiceClient.builder()
                 .endpointResolver(EndpointResolver.staticHost("http://localhost:8000"))
                 .build();
 

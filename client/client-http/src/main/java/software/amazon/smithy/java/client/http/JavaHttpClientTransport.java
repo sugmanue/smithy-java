@@ -46,9 +46,10 @@ public class JavaHttpClientTransport implements ClientTransport<HttpRequest, Htt
         // Allow clients to set Host header. This has to be done using a system property and can't be done per/client.
         var currentValues = System.getProperty("jdk.httpclient.allowRestrictedHeaders");
         if (currentValues == null || currentValues.isEmpty()) {
-            System.setProperty("jdk.httpclient.allowRestrictedHeaders", "host");
+            //System.setProperty("jdk.httpclient.allowRestrictedHeaders", "host,connection,upgrade,http2-settings");
+            System.setProperty("jdk.httpclient.allowRestrictedHeaders", "host,connection,upgrade,http2-settings");
         } else if (!containsHost(currentValues)) {
-            System.setProperty("jdk.httpclient.allowRestrictedHeaders", currentValues + ",host");
+            System.setProperty("jdk.httpclient.allowRestrictedHeaders", currentValues + ",host,connection,upgrade,http2-settings");
         }
         try {
             java.net.http.HttpRequest.newBuilder()

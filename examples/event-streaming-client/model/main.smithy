@@ -5,7 +5,10 @@ namespace smithy.example.eventstreaming
 use aws.protocols#restJson1
 use smithy.protocols#rpcv2Cbor
 
-@rpcv2Cbor
+@rpcv2Cbor(
+    http: ["h2"]
+    eventStreamHttp: ["h2"]
+)
 @restJson1
 service TickService {
     operations: [

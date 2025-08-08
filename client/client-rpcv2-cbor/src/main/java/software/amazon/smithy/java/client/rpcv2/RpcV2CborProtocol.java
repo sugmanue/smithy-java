@@ -7,6 +7,7 @@ package software.amazon.smithy.java.client.rpcv2;
 
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,6 +41,7 @@ import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.java.http.api.HttpHeaders;
 import software.amazon.smithy.java.http.api.HttpRequest;
 import software.amazon.smithy.java.http.api.HttpResponse;
+import software.amazon.smithy.java.http.api.HttpVersion;
 import software.amazon.smithy.java.io.ByteBufferOutputStream;
 import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.shapes.ShapeId;
@@ -75,6 +77,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         var target = "/service/" + service.getName() + "/operation/" + operation.schema().id().getName();
         var builder = HttpRequest.builder().method("POST").uri(endpoint.resolve(target));
 
+        builder.httpVersion(HttpVersion.HTTP_2);
         if (Unit.ID.equals(operation.inputSchema().id())) {
             // Top-level Unit types do not get serialized
             builder.headers(HttpHeaders.of(headersForEmptyBody()))
@@ -149,13 +152,14 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             public void writeEventStream(Schema schema, Flow.Publisher<? extends SerializableStruct> value) {
                 this.eventStream = value;
             }
+
             @Override
             public void writeStruct(Schema schema, SerializableStruct struct) {
                 struct.serializeMembers(this);
             }
         };
         input.serialize(serializer);
-        return EventStreamFrameEncodingProcessor.create(serializer.eventStream, eventStreamEncodingFactory);
+        return EventStreamFrameEncodingProcessor.create(serializer.eventStream, eventStreamEncodingFactory, input);
     }
 
     private DataStream getBody(SerializableStruct input) {
@@ -163,6 +167,8 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         try (var serializer = CBOR_CODEC.createSerializer(sink)) {
             input.serialize(serializer);
         }
+        Base64.Encoder encoder = Base64.getEncoder();
+        System.out.printf("========================= encoded body: %s\n", encoder.encodeToString(sink.toByteBuffer().array()));
         return DataStream.ofByteBuffer(sink.toByteBuffer(), PAYLOAD_MEDIA_TYPE);
     }
 
@@ -175,9 +181,12 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     }
 
     private Map<String, List<String>> headersForEventStreaming() {
-        return Map.of("smithy-protocol", SMITHY_PROTOCOL,
-                "content-type", List.of("application/vnd.amazon.eventstream"),
-                "Accept", CONTENT_TYPE);
+        return Map.of("smithy-protocol",
+                SMITHY_PROTOCOL,
+                "content-type",
+                List.of("application/vnd.amazon.eventstream"),
+                "Accept",
+                CONTENT_TYPE);
     }
 
     private EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
@@ -193,13 +202,21 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
             OutputEventStreamingApiOperation<?, ?, ?> outputOperation
     ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(), f -> f);
+        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(),
+                this::tranform);
     }
 
     private DataStream bodyDataStream(HttpResponse response) {
         var contentType = response.headers().contentType();
         var contentLength = response.headers().contentLength();
         return DataStream.withMetadata(response.body(), contentType, contentLength, null);
+    }
+
+    private AwsEventFrame tranform(AwsEventFrame input) {
+        if (input.unwrap().getHeaders().get(":event-type").getString().equals("initial-response")) {
+            return null;
+        }
+        return input;
     }
 
     public static final class Factory implements ClientProtocolFactory<Rpcv2CborTrait> {

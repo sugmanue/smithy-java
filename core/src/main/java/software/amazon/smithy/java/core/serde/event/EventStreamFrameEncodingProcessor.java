@@ -36,6 +36,21 @@ public final class EventStreamFrameEncodingProcessor<F extends Frame<?>, T exten
                 encoderFactory.newFrameEncoder());
     }
 
+    public static <F extends Frame<?>> EventStreamFrameEncodingProcessor<F, ?> create(
+            Flow.Publisher<? extends SerializableStruct> publisher,
+            EventEncoderFactory<F> encoderFactory,
+            SerializableStruct initialValue
+    ) {
+        var processor = new EventStreamFrameEncodingProcessor<>(
+                publisher,
+                encoderFactory.newEventEncoder(),
+                encoderFactory.newFrameEncoder());
+
+        ((EventStreamFrameEncodingProcessor<?, SerializableStruct>) processor).onNext(initialValue);
+
+        return processor;
+    }
+
     @Override
     protected Stream<ByteBuffer> map(T item) {
         return Stream.of(encoder.encode(eventEncoder.encode(item)));
