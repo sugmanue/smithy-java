@@ -6,10 +6,6 @@
 package software.amazon.smithy.java.aws.events;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -21,10 +17,11 @@ import software.amazon.eventstream.HeaderValue;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SchemaUtils;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
-import software.amazon.smithy.java.core.serde.DelegatingShapeSerializer;
+import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.model.shapes.ShapeId;
@@ -60,10 +57,10 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         var os = new ByteArrayOutputStream();
         var typeHolder = new AtomicReference<String>();
         try (var baseSerializer = codec.createSerializer(os)) {
-            var serializer = new DelegatingShapeSerializer(baseSerializer) {
+            var serializer = new SpecificShapeSerializer() {
                 @Override
                 public void writeEventStream(Schema schema, Flow.Publisher<? extends SerializableStruct> value) {
-                    typeHolder.set("initial-request");
+                    typeHolder.compareAndSet(null, "initial-request");
                 }
 
                 @Override
@@ -71,12 +68,18 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                     if (possibleTypes.contains(schema.memberName())) {
                         typeHolder.compareAndSet(null, schema.memberName());
                     }
-                    super.writeStruct(schema, struct);
+                    baseSerializer.writeStruct(schema, struct);
                 }
             };
-
-            //item.serialize(serializer);
             item.serializeMembers(serializer);
+        }
+
+        if (typeHolder.get().equals("initial-request")) {
+            os = new ByteArrayOutputStream();
+            try (var baseSerializer = codec.createSerializer(os)) {
+                SchemaUtils.withFilteredMembers(item.schema(), item, this::nonStreamingMember)
+                        .serialize(baseSerializer);
+            }
         }
 
         var headers = new HashMap<String, HeaderValue>();
@@ -84,20 +87,14 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         headers.put(":message-type", HeaderValue.fromString("event"));
         headers.put(":content-type", HeaderValue.fromString(payloadMediaType));
 
-        if (typeHolder.get().equals("initial-request")) {
-            var bytes = os.toByteArray();
-            if (bytes.length == 0) {
-                bytes = new byte[] { -65, -1 };
-            }
-            var message = new Message(headers, bytes);
-            try {
-                Files.write(Paths.get("/tmp/init-message"), message.toByteBuffer().array());
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-            return new AwsEventFrame(message);
-        }
         return new AwsEventFrame(new Message(headers, os.toByteArray()));
+    }
+
+    private boolean nonStreamingMember(Schema schema) {
+        if (schema.isMember() && schema.memberTarget().hasTrait(TraitKey.STREAMING_TRAIT)) {
+            return false;
+        }
+        return true;
     }
 
     @Override

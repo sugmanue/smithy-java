@@ -5,14 +5,6 @@
 
 package software.amazon.smithy.java.client.rpcv2;
 
-import java.net.URI;
-import java.nio.ByteBuffer;
-import java.util.Base64;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 import software.amazon.smithy.java.aws.events.AwsEventDecoderFactory;
 import software.amazon.smithy.java.aws.events.AwsEventEncoderFactory;
 import software.amazon.smithy.java.aws.events.AwsEventFrame;
@@ -46,6 +38,15 @@ import software.amazon.smithy.java.io.ByteBufferOutputStream;
 import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.protocol.traits.Rpcv2CborTrait;
+
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
+import java.util.function.Function;
 
 public final class RpcV2CborProtocol extends HttpClientProtocol {
     private static final Codec CBOR_CODEC = Rpcv2CborCodec.builder().build();
@@ -103,24 +104,29 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             HttpResponse response
     ) {
 
-        if (operation instanceof OutputEventStreamingApiOperation<?, ?, ?> o) {
+        if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
+            var eventDecoderFactory = getEventDecoderFactory(o);
+            return new EventStreamResponse().deserializeResponse(
+                    o,eventDecoderFactory, CBOR_CODEC, response
+            );
+            /*
             var builder = operation.outputBuilder();
             DataStream bodyDataStream = bodyDataStream(response);
             var eventDecoderFactory = getEventDecoderFactory(o);
+            //var publisher = EventStreamFrameDecodingProcessor.create(bodyDataStream, eventDecoderFactory);
             var deserializer = new SpecificShapeDeserializer() {
                 @Override
                 public Flow.Publisher<? extends SerializableStruct> readEventStream(Schema schema) {
                     return EventStreamFrameDecodingProcessor.create(bodyDataStream, eventDecoderFactory);
                 }
-            };
-            var deserializer2 = new SpecificShapeDeserializer() {
                 @Override
                 public <T> void readStruct(Schema schema, T state, StructMemberConsumer<T> consumer) {
-                    consumer.accept(state, schema, deserializer);
+                    consumer.accept(state, schema, this);
                 }
             };
-            builder = builder.deserialize(deserializer2);
+            builder = builder.deserialize(deserializer);
             return CompletableFuture.completedFuture(builder.build());
+             */
         }
 
         if (response.statusCode() != 200) {
@@ -159,7 +165,9 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             }
         };
         input.serialize(serializer);
-        return EventStreamFrameEncodingProcessor.create(serializer.eventStream, eventStreamEncodingFactory, input);
+        var publisher =
+                EventStreamFrameEncodingProcessor.create(serializer.eventStream, eventStreamEncodingFactory, input);
+        return publisher;
     }
 
     private DataStream getBody(SerializableStruct input) {
@@ -167,8 +175,6 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         try (var serializer = CBOR_CODEC.createSerializer(sink)) {
             input.serialize(serializer);
         }
-        Base64.Encoder encoder = Base64.getEncoder();
-        System.out.printf("========================= encoded body: %s\n", encoder.encodeToString(sink.toByteBuffer().array()));
         return DataStream.ofByteBuffer(sink.toByteBuffer(), PAYLOAD_MEDIA_TYPE);
     }
 
@@ -202,8 +208,9 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
             OutputEventStreamingApiOperation<?, ?, ?> outputOperation
     ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(),
-                this::tranform);
+        return AwsEventDecoderFactory.forOutputStream(outputOperation,
+                payloadCodec(),
+                f -> f);
     }
 
     private DataStream bodyDataStream(HttpResponse response) {

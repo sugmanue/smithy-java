@@ -5,16 +5,17 @@
 
 package software.amazon.smithy.java.core.serde;
 
+import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.serde.document.Document;
+import software.amazon.smithy.java.io.datastream.DataStream;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.concurrent.Flow;
 import java.util.function.BiConsumer;
-import software.amazon.smithy.java.core.schema.Schema;
-import software.amazon.smithy.java.core.schema.SerializableStruct;
-import software.amazon.smithy.java.core.serde.document.Document;
-import software.amazon.smithy.java.io.datastream.DataStream;
 
 public class DelegatingShapeSerializer implements ShapeSerializer {
 

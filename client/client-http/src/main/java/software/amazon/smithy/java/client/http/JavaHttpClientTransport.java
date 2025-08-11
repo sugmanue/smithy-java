@@ -47,9 +47,13 @@ public class JavaHttpClientTransport implements ClientTransport<HttpRequest, Htt
         var currentValues = System.getProperty("jdk.httpclient.allowRestrictedHeaders");
         if (currentValues == null || currentValues.isEmpty()) {
             //System.setProperty("jdk.httpclient.allowRestrictedHeaders", "host,connection,upgrade,http2-settings");
-            System.setProperty("jdk.httpclient.allowRestrictedHeaders", "host,connection,upgrade,http2-settings");
+            System.setProperty("jdk.httpclient.allowRestrictedHeaders", "host");
         } else if (!containsHost(currentValues)) {
-            System.setProperty("jdk.httpclient.allowRestrictedHeaders", currentValues + ",host,connection,upgrade,http2-settings");
+            /*
+            System.setProperty("jdk.httpclient.allowRestrictedHeaders",
+                    currentValues + ",host,connection,upgrade,http2-settings");
+             */
+            System.setProperty("jdk.httpclient.allowRestrictedHeaders", currentValues + ",host");
         }
         try {
             java.net.http.HttpRequest.newBuilder()
