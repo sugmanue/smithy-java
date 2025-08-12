@@ -1,6 +1,7 @@
 package software.amazon.smithy.java.client.rpcv2;
 
 import software.amazon.eventstream.Message;
+import software.amazon.smithy.java.aws.events.AwsEventDecoderFactory;
 import software.amazon.smithy.java.aws.events.AwsEventFrame;
 import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
@@ -23,16 +24,16 @@ public class EventStreamResponse {
 
     public <I extends SerializableStruct, O extends SerializableStruct> CompletableFuture<O> deserializeResponse(
             OutputEventStreamingApiOperation<I, O, ?> operation,
-            EventDecoderFactory<AwsEventFrame> eventDecoderFactory,
             Codec codec,
             HttpResponse response
     ) {
+        var eventDecoderFactory = getEventDecoderFactory(operation, codec);
         DataStream bodyDataStream = bodyDataStream(response);
         CompletableFuture<O> result = new CompletableFuture<>();
 
         var processor = EventStreamFrameDecodingProcessor.create(
                 bodyDataStream, eventDecoderFactory,
-                new InitialResponseDecoder<O>(operation::outputBuilder, codec)
+                new InitialResponseDecoder<>(operation::outputBuilder, codec)
         );
 
         processor.subscribe(new Flow.Subscriber<>() {
@@ -42,8 +43,8 @@ public class EventStreamResponse {
                 subscription.request(1);
             }
 
-            @SuppressWarnings("unchecked")
             @Override
+            @SuppressWarnings("unchecked")
             public void onNext(SerializableStruct item) {
                 result.complete((O) item);
             }
@@ -59,6 +60,14 @@ public class EventStreamResponse {
         });
 
         return result;
+    }
+
+    private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
+            OutputEventStreamingApiOperation<?, ?, ?> outputOperation, Codec codec
+    ) {
+        return AwsEventDecoderFactory.forOutputStream(outputOperation,
+                codec,
+                f -> f);
     }
 
     private DataStream bodyDataStream(HttpResponse response) {
@@ -90,7 +99,7 @@ public class EventStreamResponse {
             var codecDeserializer = codec.createDeserializer(message.getPayload());
             builder.deserialize(codecDeserializer);
             var publisherMember = getPublisherMember(builder.schema());
-            var responseDeserializer = new InitialResponseDeserializer(publisherMember, publisher);
+            var responseDeserializer = new EventStreamDeserializer(publisherMember, publisher);
             builder.deserialize(responseDeserializer);
             return builder.build();
         }
@@ -109,11 +118,11 @@ public class EventStreamResponse {
         }
     }
 
-    static class InitialResponseDeserializer extends SpecificShapeDeserializer {
+    static class EventStreamDeserializer extends SpecificShapeDeserializer {
         private final Schema publisherMember;
         private final Flow.Publisher<? extends SerializableStruct> publisher;
 
-        InitialResponseDeserializer(Schema publisherMember, Flow.Publisher<? extends SerializableStruct> publisher) {
+        EventStreamDeserializer(Schema publisherMember, Flow.Publisher<? extends SerializableStruct> publisher) {
             this.publisherMember = publisherMember;
             this.publisher = publisher;
         }

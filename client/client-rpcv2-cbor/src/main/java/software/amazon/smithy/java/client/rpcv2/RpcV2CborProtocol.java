@@ -46,7 +46,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
-import java.util.function.Function;
 
 public final class RpcV2CborProtocol extends HttpClientProtocol {
     private static final Codec CBOR_CODEC = Rpcv2CborCodec.builder().build();
@@ -112,10 +111,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         }
 
         if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
-            var eventDecoderFactory = getEventDecoderFactory(o);
-            return new EventStreamResponse().deserializeResponse(
-                    o,eventDecoderFactory, CBOR_CODEC, response
-            );
+            return new EventStreamResponse().deserializeResponse(o, CBOR_CODEC, response);
         }
 
         var builder = operation.outputBuilder();
@@ -149,6 +145,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         input.serialize(serializer);
         var publisher = EventStreamFrameEncodingProcessor.create(serializer.eventStream,
                 eventStreamEncodingFactory, input);
+        publisher.onNext(input);
         return publisher;
     }
 
@@ -199,13 +196,6 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         var contentType = response.headers().contentType();
         var contentLength = response.headers().contentLength();
         return DataStream.withMetadata(response.body(), contentType, contentLength, null);
-    }
-
-    private AwsEventFrame tranform(AwsEventFrame input) {
-        if (input.unwrap().getHeaders().get(":event-type").getString().equals("initial-response")) {
-            return null;
-        }
-        return input;
     }
 
     public static final class Factory implements ClientProtocolFactory<Rpcv2CborTrait> {

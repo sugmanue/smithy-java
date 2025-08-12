@@ -45,7 +45,7 @@ public final class SchemaUtils {
             @Override
             public <T> T getMemberValue(Schema member) {
                 // getMemberValue call creates an infinite loop
-                return memberPredicate.test(schema()) ? getMemberValue(member) : null;
+                return memberPredicate.test(schema()) ? struct.getMemberValue(member) : null;
             }
         };
     }

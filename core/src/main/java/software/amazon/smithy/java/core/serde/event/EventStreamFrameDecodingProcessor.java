@@ -8,7 +8,6 @@ package software.amazon.smithy.java.core.serde.event;
 import java.nio.ByteBuffer;
 import java.util.concurrent.Flow;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
 import java.util.stream.Stream;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.BufferingFlatMapProcessor;
@@ -18,7 +17,7 @@ public final class EventStreamFrameDecodingProcessor<F extends Frame<?>>
     private final FrameDecoder<F> decoder;
     private final EventDecoder<F> eventDecoder;
     private final InitialResponseDecoder<F> initialResponseDecoder;
-    private final AtomicBoolean initialResponseConsumed = new AtomicBoolean();
+    private final AtomicBoolean initialResponseConsumed;
 
     public EventStreamFrameDecodingProcessor(
             Flow.Publisher<ByteBuffer> publisher,
@@ -29,6 +28,7 @@ public final class EventStreamFrameDecodingProcessor<F extends Frame<?>>
         this.decoder = decoder;
         this.eventDecoder = eventDecoder;
         this.initialResponseDecoder = null;
+        this.initialResponseConsumed = new AtomicBoolean(true);
     }
 
     public EventStreamFrameDecodingProcessor(
@@ -41,6 +41,7 @@ public final class EventStreamFrameDecodingProcessor<F extends Frame<?>>
         this.decoder = decoder;
         this.eventDecoder = eventDecoder;
         this.initialResponseDecoder = initialResponseDecoder;
+        this.initialResponseConsumed = new AtomicBoolean();
     }
 
     public static <F extends Frame<?>> EventStreamFrameDecodingProcessor<F> create(

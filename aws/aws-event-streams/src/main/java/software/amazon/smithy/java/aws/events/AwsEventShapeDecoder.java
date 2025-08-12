@@ -33,6 +33,7 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct> implements
     public E decode(AwsEventFrame frame) {
         Message message = frame.unwrap();
         String messageType = getMessageType(message);
+
         if (!messageType.equals("event")) {
             throw new UnsupportedOperationException("Unsupported frame type: " + messageType);
         }

@@ -5,11 +5,12 @@
 
 package software.amazon.smithy.java.core.serde.event;
 
+import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.serde.BufferingFlatMapProcessor;
+
 import java.nio.ByteBuffer;
 import java.util.concurrent.Flow;
 import java.util.stream.Stream;
-import software.amazon.smithy.java.core.schema.SerializableStruct;
-import software.amazon.smithy.java.core.serde.BufferingFlatMapProcessor;
 
 public final class EventStreamFrameEncodingProcessor<F extends Frame<?>, T extends SerializableStruct>
         extends BufferingFlatMapProcessor<T, ByteBuffer> {
@@ -36,7 +37,8 @@ public final class EventStreamFrameEncodingProcessor<F extends Frame<?>, T exten
                 encoderFactory.newFrameEncoder());
     }
 
-    public static <F extends Frame<?>> EventStreamFrameEncodingProcessor<F, ?> create(
+    @SuppressWarnings("unchecked")
+    public static <F extends Frame<?>> EventStreamFrameEncodingProcessor<F, SerializableStruct> create(
             Flow.Publisher<? extends SerializableStruct> publisher,
             EventEncoderFactory<F> encoderFactory,
             SerializableStruct initialValue
@@ -46,9 +48,10 @@ public final class EventStreamFrameEncodingProcessor<F extends Frame<?>, T exten
                 encoderFactory.newEventEncoder(),
                 encoderFactory.newFrameEncoder());
 
-        ((EventStreamFrameEncodingProcessor<?, SerializableStruct>) processor).onNext(initialValue);
+//        ((EventStreamFrameEncodingProcessor<?, SerializableStruct>) processor).onNext(initialValue);
 
-        return processor;
+        return ((EventStreamFrameEncodingProcessor<F, SerializableStruct>) processor);
+        //return processor;
     }
 
     @Override
