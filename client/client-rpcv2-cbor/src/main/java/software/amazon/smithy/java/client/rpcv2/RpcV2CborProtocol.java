@@ -104,36 +104,18 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             HttpResponse response
     ) {
 
-        if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
-            var eventDecoderFactory = getEventDecoderFactory(o);
-            return new EventStreamResponse().deserializeResponse(
-                    o,eventDecoderFactory, CBOR_CODEC, response
-            );
-            /*
-            var builder = operation.outputBuilder();
-            DataStream bodyDataStream = bodyDataStream(response);
-            var eventDecoderFactory = getEventDecoderFactory(o);
-            //var publisher = EventStreamFrameDecodingProcessor.create(bodyDataStream, eventDecoderFactory);
-            var deserializer = new SpecificShapeDeserializer() {
-                @Override
-                public Flow.Publisher<? extends SerializableStruct> readEventStream(Schema schema) {
-                    return EventStreamFrameDecodingProcessor.create(bodyDataStream, eventDecoderFactory);
-                }
-                @Override
-                public <T> void readStruct(Schema schema, T state, StructMemberConsumer<T> consumer) {
-                    consumer.accept(state, schema, this);
-                }
-            };
-            builder = builder.deserialize(deserializer);
-            return CompletableFuture.completedFuture(builder.build());
-             */
-        }
-
         if (response.statusCode() != 200) {
             return errorDeserializer.createError(context, operation.schema().id(), typeRegistry, response)
                     .thenApply(e -> {
                         throw e;
                     });
+        }
+
+        if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
+            var eventDecoderFactory = getEventDecoderFactory(o);
+            return new EventStreamResponse().deserializeResponse(
+                    o,eventDecoderFactory, CBOR_CODEC, response
+            );
         }
 
         var builder = operation.outputBuilder();
@@ -165,8 +147,8 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             }
         };
         input.serialize(serializer);
-        var publisher =
-                EventStreamFrameEncodingProcessor.create(serializer.eventStream, eventStreamEncodingFactory, input);
+        var publisher = EventStreamFrameEncodingProcessor.create(serializer.eventStream,
+                eventStreamEncodingFactory, input);
         return publisher;
     }
 

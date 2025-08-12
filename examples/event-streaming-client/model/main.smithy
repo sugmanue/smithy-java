@@ -9,7 +9,7 @@ use smithy.protocols#rpcv2Cbor
     http: ["h2"]
     eventStreamHttp: ["h2"]
 )
-@restJson1
+// @restJson1
 service TickService {
     operations: [
         FizzBuzz
@@ -24,18 +24,22 @@ service FizzBuzzService {
     ]
 }
 
-@http(method: "POST", uri: "/fizzBuzz", code: 200)
+// @http(method: "POST", uri: "/fizzBuzz", code: 200)
 operation FizzBuzz {
     input: FizzBuzzInput
     output: FizzBuzzOutput
 }
 
 structure FizzBuzzInput {
+    inputField: String
+
     @httpPayload
     stream: ValueStream
 }
 
 structure FizzBuzzOutput {
+    outputField: String
+
     @httpPayload
     stream: FizzBuzzStream
 }

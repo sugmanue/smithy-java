@@ -6,9 +6,10 @@ import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
+import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
-import software.amazon.smithy.java.core.serde.DelegatingShapeDeserializer;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
+import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamFrameDecodingProcessor;
 import software.amazon.smithy.java.http.api.HttpResponse;
@@ -35,14 +36,13 @@ public class EventStreamResponse {
         );
 
         processor.subscribe(new Flow.Subscriber<>() {
-            private Flow.Subscription subscription;
 
             @Override
             public void onSubscribe(Flow.Subscription subscription) {
-                this.subscription = subscription;
                 subscription.request(1);
             }
 
+            @SuppressWarnings("unchecked")
             @Override
             public void onNext(SerializableStruct item) {
                 result.complete((O) item);
@@ -55,7 +55,6 @@ public class EventStreamResponse {
 
             @Override
             public void onComplete() {
-
             }
         });
 
@@ -84,17 +83,25 @@ public class EventStreamResponse {
         public SerializableStruct decode(AwsEventFrame frame, Flow.Publisher<? extends SerializableStruct> publisher) {
             Message message = frame.unwrap();
             String eventType = getEventType(message);
-            if (!eventType.equals("initial-response")) {
+            if (!"initial-response".equals(eventType)) {
                 throw new UnsupportedOperationException("Unsupported frame type: " + eventType);
             }
-            ShapeBuilder<E> builder = responseBuilder.get();
+            var builder = responseBuilder.get();
             var codecDeserializer = codec.createDeserializer(message.getPayload());
-            var responseDeserializer = new InitialResponseDeserializer(codecDeserializer, publisher);
-            return builder.deserialize(responseDeserializer).build();
+            builder.deserialize(codecDeserializer);
+            var publisherMember = getPublisherMember(builder.schema());
+            var responseDeserializer = new InitialResponseDeserializer(publisherMember, publisher);
+            builder.deserialize(responseDeserializer);
+            return builder.build();
         }
 
-        private String getMessageType(Message message) {
-            return message.getHeaders().get(":message-type").getString();
+        private Schema getPublisherMember(Schema schema) {
+            for (var member : schema.members()) {
+                if (member.memberTarget().hasTrait(TraitKey.STREAMING_TRAIT)) {
+                    return member;
+                }
+            }
+            throw new IllegalArgumentException("cannot find streaming member");
         }
 
         private String getEventType(Message message) {
@@ -102,11 +109,12 @@ public class EventStreamResponse {
         }
     }
 
-    static class InitialResponseDeserializer extends DelegatingShapeDeserializer {
+    static class InitialResponseDeserializer extends SpecificShapeDeserializer {
+        private final Schema publisherMember;
         private final Flow.Publisher<? extends SerializableStruct> publisher;
 
-        InitialResponseDeserializer(ShapeDeserializer delegate, Flow.Publisher<? extends SerializableStruct> publisher) {
-            super(delegate);
+        InitialResponseDeserializer(Schema publisherMember, Flow.Publisher<? extends SerializableStruct> publisher) {
+            this.publisherMember = publisherMember;
             this.publisher = publisher;
         }
 
@@ -117,8 +125,7 @@ public class EventStreamResponse {
 
         @Override
         public <T> void readStruct(Schema schema, T state, ShapeDeserializer.StructMemberConsumer<T> consumer) {
-            consumer.accept(state, schema, this);
+            consumer.accept(state, publisherMember, this);
         }
     }
-
 }

@@ -36,6 +36,7 @@ public class EventStreamTest2 {
 
         FizzBuzzInput input = FizzBuzzInput.builder()
                 .stream(new ValueStreamPublisher(range))
+
                 .build();
         FizzBuzzOutput output = client.fizzBuzz(input);
 
