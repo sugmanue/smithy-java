@@ -66,5 +66,4 @@ public class AwsEventEncoderFactory implements EventEncoderFactory<AwsEventFrame
     public String contentType() {
         return "application/vnd.amazon.eventstream";
     }
-
 }

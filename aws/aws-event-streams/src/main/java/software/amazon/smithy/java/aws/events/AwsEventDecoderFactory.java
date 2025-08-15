@@ -5,7 +5,6 @@
 
 package software.amazon.smithy.java.aws.events;
 
-import java.util.function.Supplier;
 import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
@@ -17,26 +16,41 @@ import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.FrameDecoder;
 import software.amazon.smithy.java.core.serde.event.FrameTransformer;
 
-public class AwsEventDecoderFactory<E extends SerializableStruct> implements EventDecoderFactory<AwsEventFrame> {
+import java.util.function.Supplier;
 
-    private final Schema schema;
+public class AwsEventDecoderFactory<E extends SerializableStruct, IR extends SerializableStruct>
+        implements EventDecoderFactory<AwsEventFrame> {
+
+    private final Supplier<ShapeBuilder<IR>> initialResponseBuilder;
+    private final Schema eventSchema;
     private final Codec codec;
     private final Supplier<ShapeBuilder<E>> eventBuilder;
     private final FrameTransformer<AwsEventFrame> transformer;
 
     private AwsEventDecoderFactory(
-            Schema schema,
+            Supplier<ShapeBuilder<IR>> initialResponseBuilder,
+            Schema eventSchema,
             Codec codec,
             Supplier<ShapeBuilder<E>> eventBuilder,
             FrameTransformer<AwsEventFrame> transformer
     ) {
-        this.schema = schema.isMember() ? schema.memberTarget() : schema;
+        this.initialResponseBuilder = initialResponseBuilder;
+        this.eventSchema = eventSchema.isMember() ? eventSchema.memberTarget() : eventSchema;
         this.codec = codec;
         this.eventBuilder = eventBuilder;
         this.transformer = transformer;
     }
 
-    public static <IE extends SerializableStruct> AwsEventDecoderFactory<IE> forInputStream(
+    private AwsEventDecoderFactory(
+            Schema eventSchema,
+            Codec codec,
+            Supplier<ShapeBuilder<E>> eventBuilder,
+            FrameTransformer<AwsEventFrame> transformer
+    ) {
+        this(null, eventSchema, codec, eventBuilder, transformer);
+    }
+
+    public static <IE extends SerializableStruct> AwsEventDecoderFactory<IE, ?> forInputStream(
             InputEventStreamingApiOperation<?, ?, IE> operation,
             Codec codec,
             FrameTransformer<AwsEventFrame> transformer
@@ -48,12 +62,13 @@ public class AwsEventDecoderFactory<E extends SerializableStruct> implements Eve
                 transformer);
     }
 
-    public static <OE extends SerializableStruct> AwsEventDecoderFactory<OE> forOutputStream(
+    public static <OE extends SerializableStruct> AwsEventDecoderFactory<OE, ?> forOutputStream(
             OutputEventStreamingApiOperation<?, ?, OE> operation,
             Codec codec,
             FrameTransformer<AwsEventFrame> transformer
     ) {
         return new AwsEventDecoderFactory<>(
+                operation::outputBuilder,
                 operation.outputStreamMember(),
                 codec,
                 operation.outputEventBuilderSupplier(),
@@ -62,7 +77,7 @@ public class AwsEventDecoderFactory<E extends SerializableStruct> implements Eve
 
     @Override
     public EventDecoder<AwsEventFrame> newEventDecoder() {
-        return new AwsEventShapeDecoder<>(eventBuilder, schema, codec);
+        return new AwsEventShapeDecoder2<>(initialResponseBuilder, eventBuilder, eventSchema, codec);
     }
 
     @Override

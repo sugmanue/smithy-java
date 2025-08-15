@@ -130,11 +130,12 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             SerializableStruct input
     ) {
         var serializer = new SpecificShapeSerializer() {
-            private Flow.Publisher<? extends SerializableStruct> eventStream;
+            private Flow.Publisher<SerializableStruct> eventStream;
 
             @Override
+            @SuppressWarnings("unchecked")
             public void writeEventStream(Schema schema, Flow.Publisher<? extends SerializableStruct> value) {
-                this.eventStream = value;
+                this.eventStream = (Flow.Publisher<SerializableStruct>) value;
             }
 
             @Override
@@ -144,7 +145,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         };
         input.serialize(serializer);
         var publisher = EventStreamFrameEncodingProcessor.create(serializer.eventStream,
-                eventStreamEncodingFactory, input);
+                eventStreamEncodingFactory);
         publisher.onNext(input);
         return publisher;
     }

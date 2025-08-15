@@ -5,43 +5,26 @@
 
 package software.amazon.smithy.java.core.serde.event;
 
-import java.nio.ByteBuffer;
-import java.util.concurrent.Flow;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.BufferingFlatMapProcessor;
 
+import java.nio.ByteBuffer;
+import java.util.concurrent.Flow;
+import java.util.stream.Stream;
+
 public final class EventStreamFrameDecodingProcessor<F extends Frame<?>>
         extends BufferingFlatMapProcessor<ByteBuffer, SerializableStruct> {
-    private final FrameDecoder<F> decoder;
+    private final FrameDecoder<F> frameDecoder;
     private final EventDecoder<F> eventDecoder;
-    private final InitialResponseDecoder<F> initialResponseDecoder;
-    private final AtomicBoolean initialResponseConsumed;
 
-    public EventStreamFrameDecodingProcessor(
+    EventStreamFrameDecodingProcessor(
             Flow.Publisher<ByteBuffer> publisher,
-            FrameDecoder<F> decoder,
+            FrameDecoder<F> frameDecoder,
             EventDecoder<F> eventDecoder
     ) {
         super(publisher);
-        this.decoder = decoder;
+        this.frameDecoder = frameDecoder;
         this.eventDecoder = eventDecoder;
-        this.initialResponseDecoder = null;
-        this.initialResponseConsumed = new AtomicBoolean(true);
-    }
-
-    public EventStreamFrameDecodingProcessor(
-            Flow.Publisher<ByteBuffer> publisher,
-            FrameDecoder<F> decoder,
-            EventDecoder<F> eventDecoder,
-            InitialResponseDecoder<F> initialResponseDecoder
-    ) {
-        super(publisher);
-        this.decoder = decoder;
-        this.eventDecoder = eventDecoder;
-        this.initialResponseDecoder = initialResponseDecoder;
-        this.initialResponseConsumed = new AtomicBoolean();
     }
 
     public static <F extends Frame<?>> EventStreamFrameDecodingProcessor<F> create(
@@ -54,25 +37,13 @@ public final class EventStreamFrameDecodingProcessor<F extends Frame<?>>
                 eventDecoderFactory.newEventDecoder());
     }
 
-    public static <F extends Frame<?>> EventStreamFrameDecodingProcessor<F> create(
-            Flow.Publisher<ByteBuffer> publisher,
-            EventDecoderFactory<F> eventDecoderFactory,
-            InitialResponseDecoder<F> initialResponseDecoder
-    ) {
-        return new EventStreamFrameDecodingProcessor<>(
-                publisher,
-                eventDecoderFactory.newFrameDecoder(),
-                eventDecoderFactory.newEventDecoder(),
-                initialResponseDecoder);
+    public void prepare() {
+        frameDecoder.onPrepare(this);
+        eventDecoder.onPrepare(this);
     }
 
     @Override
     protected Stream<SerializableStruct> map(ByteBuffer item) {
-        var frames = decoder.decode(item);
-        if (!frames.isEmpty() && initialResponseConsumed.compareAndSet(false, true)) {
-            var initialResponse = initialResponseDecoder.decode(frames.get(0), this);
-            return Stream.concat(Stream.of(initialResponse), frames.stream().skip(1).map(eventDecoder::decode));
-        }
-        return frames.stream().map(eventDecoder::decode);
+        return frameDecoder.decode(item).stream().map(eventDecoder::decode);
     }
 }
