@@ -31,13 +31,15 @@ operation FizzBuzz {
 }
 
 structure FizzBuzzInput {
-    // inputField: String
+    inputField: String
+
     @httpPayload
     stream: ValueStream
 }
 
 structure FizzBuzzOutput {
-    // outputField: String
+    outputField: String
+
     @httpPayload
     stream: FizzBuzzStream
 }

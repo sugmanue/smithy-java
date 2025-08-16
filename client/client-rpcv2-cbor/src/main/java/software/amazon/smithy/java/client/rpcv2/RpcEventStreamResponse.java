@@ -1,10 +1,7 @@
 package software.amazon.smithy.java.client.rpcv2;
 
-import software.amazon.smithy.java.aws.events.AwsEventDecoderFactory;
 import software.amazon.smithy.java.aws.events.AwsEventFrame;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
-import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamFrameDecodingProcessor;
 import software.amazon.smithy.java.http.api.HttpResponse;
@@ -13,14 +10,15 @@ import software.amazon.smithy.java.io.datastream.DataStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 
-public class EventStreamResponse {
+public final class RpcEventStreamResponse {
 
-    public <I extends SerializableStruct, O extends SerializableStruct> CompletableFuture<O> deserializeResponse(
-            OutputEventStreamingApiOperation<I, O, ?> operation,
-            Codec codec,
+    private RpcEventStreamResponse() {
+    }
+
+    public static <O extends SerializableStruct> CompletableFuture<O> deserializeResponse(
+            EventDecoderFactory<AwsEventFrame> eventDecoderFactory,
             HttpResponse response
     ) {
-        var eventDecoderFactory = getEventDecoderFactory(operation, codec);
         DataStream bodyDataStream = bodyDataStream(response);
         CompletableFuture<O> result = new CompletableFuture<>();
 
@@ -46,21 +44,15 @@ public class EventStreamResponse {
 
             @Override
             public void onComplete() {
+                result.completeExceptionally(new RuntimeException("Event stream completed"));
             }
         });
 
         return result;
     }
 
-    private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
-            OutputEventStreamingApiOperation<?, ?, ?> outputOperation, Codec codec
-    ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation,
-                codec,
-                f -> f);
-    }
 
-    private DataStream bodyDataStream(HttpResponse response) {
+    private static DataStream bodyDataStream(HttpResponse response) {
         var contentType = response.headers().contentType();
         var contentLength = response.headers().contentLength();
         return DataStream.withMetadata(response.body(), contentType, contentLength, null);

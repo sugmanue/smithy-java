@@ -47,7 +47,7 @@ public class AwsEventDecoderFactory<E extends SerializableStruct, IR extends Ser
             Supplier<ShapeBuilder<E>> eventBuilder,
             FrameTransformer<AwsEventFrame> transformer
     ) {
-        this(null, eventSchema, codec, eventBuilder, transformer);
+        this(AwsEventDecoderFactory::unsupportedInitialResponseBuilder, eventSchema, codec, eventBuilder, transformer);
     }
 
     public static <IE extends SerializableStruct> AwsEventDecoderFactory<IE, ?> forInputStream(
@@ -77,11 +77,15 @@ public class AwsEventDecoderFactory<E extends SerializableStruct, IR extends Ser
 
     @Override
     public EventDecoder<AwsEventFrame> newEventDecoder() {
-        return new AwsEventShapeDecoder2<>(initialResponseBuilder, eventBuilder, eventSchema, codec);
+        return new AwsEventShapeDecoder<>(initialResponseBuilder, eventBuilder, eventSchema, codec);
     }
 
     @Override
     public FrameDecoder<AwsEventFrame> newFrameDecoder() {
         return new AwsFrameDecoder(transformer);
+    }
+
+    static <T extends SerializableStruct> ShapeBuilder<T> unsupportedInitialResponseBuilder() {
+        throw new IllegalStateException("Initial response builder is not configured.");
     }
 }

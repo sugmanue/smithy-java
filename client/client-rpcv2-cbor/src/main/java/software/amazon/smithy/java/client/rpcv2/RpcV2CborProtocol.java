@@ -18,17 +18,12 @@ import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.Unit;
 import software.amazon.smithy.java.core.serde.Codec;
-import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
-import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
-import software.amazon.smithy.java.core.serde.event.EventStreamFrameDecodingProcessor;
-import software.amazon.smithy.java.core.serde.event.EventStreamFrameEncodingProcessor;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.java.http.api.HttpHeaders;
 import software.amazon.smithy.java.http.api.HttpRequest;
@@ -40,12 +35,10 @@ import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.protocol.traits.Rpcv2CborTrait;
 
 import java.net.URI;
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
 
 public final class RpcV2CborProtocol extends HttpClientProtocol {
     private static final Codec CBOR_CODEC = Rpcv2CborCodec.builder().build();
@@ -84,8 +77,10 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
                     .body(DataStream.ofEmpty());
         } else if (operation instanceof InputEventStreamingApiOperation<?, ?, ?> i) {
             // Event streaming
+            var encoderFactory = getEventEncoderFactory(i);
+            var body = RpcEventStreamsRequest.bodyForEventStreaming(encoderFactory, input);
             builder.headers(HttpHeaders.of(headersForEventStreaming()))
-                    .body(getBodyForEventStreaming(getEventEncoderFactory(i), input));
+                    .body(body);
         } else {
             // Regular request
             builder.headers(HttpHeaders.of(headers()))
@@ -102,7 +97,6 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             HttpRequest request,
             HttpResponse response
     ) {
-
         if (response.statusCode() != 200) {
             return errorDeserializer.createError(context, operation.schema().id(), typeRegistry, response)
                     .thenApply(e -> {
@@ -111,7 +105,8 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         }
 
         if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
-            return new EventStreamResponse().deserializeResponse(o, CBOR_CODEC, response);
+            var eventDecoderFactory = getEventDecoderFactory(o);
+            return RpcEventStreamResponse.deserializeResponse(eventDecoderFactory, response);
         }
 
         var builder = operation.outputBuilder();
@@ -125,31 +120,6 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
                 .toCompletableFuture();
     }
 
-    private Flow.Publisher<ByteBuffer> getBodyForEventStreaming(
-            EventEncoderFactory<AwsEventFrame> eventStreamEncodingFactory,
-            SerializableStruct input
-    ) {
-        var serializer = new SpecificShapeSerializer() {
-            private Flow.Publisher<SerializableStruct> eventStream;
-
-            @Override
-            @SuppressWarnings("unchecked")
-            public void writeEventStream(Schema schema, Flow.Publisher<? extends SerializableStruct> value) {
-                this.eventStream = (Flow.Publisher<SerializableStruct>) value;
-            }
-
-            @Override
-            public void writeStruct(Schema schema, SerializableStruct struct) {
-                struct.serializeMembers(this);
-            }
-        };
-        input.serialize(serializer);
-        var publisher = EventStreamFrameEncodingProcessor.create(serializer.eventStream,
-                eventStreamEncodingFactory);
-        publisher.onNext(input);
-        return publisher;
-    }
-
     private DataStream getBody(SerializableStruct input) {
         var sink = new ByteBufferOutputStream();
         try (var serializer = CBOR_CODEC.createSerializer(sink)) {
@@ -159,7 +129,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     }
 
     private Map<String, List<String>> headers() {
-        return Map.of("Content-Type", CONTENT_TYPE, "smithy-protocol", SMITHY_PROTOCOL, "Accept", CONTENT_TYPE);
+        return Map.of("smithy-protocol", SMITHY_PROTOCOL, "Content-Type", CONTENT_TYPE, "Accept", CONTENT_TYPE);
     }
 
     private Map<String, List<String>> headersForEmptyBody() {
@@ -169,7 +139,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     private Map<String, List<String>> headersForEventStreaming() {
         return Map.of("smithy-protocol",
                 SMITHY_PROTOCOL,
-                "content-type",
+                "Content-Type",
                 List.of("application/vnd.amazon.eventstream"),
                 "Accept",
                 CONTENT_TYPE);
@@ -178,6 +148,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
     private EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
             InputEventStreamingApiOperation<?, ?, ?> inputOperation
     ) {
+
         // TODO: this is where you'd plumb through Sigv4 support, another frame transformer?
         return AwsEventEncoderFactory.forInputStream(inputOperation,
                 payloadCodec(),
@@ -191,12 +162,6 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         return AwsEventDecoderFactory.forOutputStream(outputOperation,
                 payloadCodec(),
                 f -> f);
-    }
-
-    private DataStream bodyDataStream(HttpResponse response) {
-        var contentType = response.headers().contentType();
-        var contentLength = response.headers().contentLength();
-        return DataStream.withMetadata(response.body(), contentType, contentLength, null);
     }
 
     public static final class Factory implements ClientProtocolFactory<Rpcv2CborTrait> {

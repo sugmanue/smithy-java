@@ -129,7 +129,7 @@ public final class ResponseSerializer {
         Objects.requireNonNull(payloadMediaType, "payloadMediaType is not set");
 
         Schema schema;
-        boolean isFailure = errorSchema != null;
+        var isFailure = errorSchema != null;
         if (isFailure) {
             schema = errorSchema;
         } else {
