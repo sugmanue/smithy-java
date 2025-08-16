@@ -1,15 +1,19 @@
-package software.amazon.smithy.java.core.serde;
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-import software.amazon.smithy.java.core.schema.Schema;
-import software.amazon.smithy.java.core.schema.SerializableStruct;
-import software.amazon.smithy.java.core.serde.document.Document;
-import software.amazon.smithy.java.io.datastream.DataStream;
+package software.amazon.smithy.java.core.serde;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.concurrent.Flow;
+import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.serde.document.Document;
+import software.amazon.smithy.java.io.datastream.DataStream;
 
 public class DelegatingShapeDeserializer implements ShapeDeserializer {
     private final ShapeDeserializer delegate;

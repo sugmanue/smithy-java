@@ -5,6 +5,14 @@
 
 package software.amazon.smithy.java.aws.events;
 
+import java.io.ByteArrayOutputStream;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import software.amazon.eventstream.HeaderValue;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.error.ModeledException;
@@ -17,17 +25,6 @@ import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.model.shapes.ShapeId;
-
-import java.io.ByteArrayOutputStream;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
@@ -55,9 +52,12 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         var typeHolder = new AtomicReference<String>();
         var payload = encodeInput(item, typeHolder);
         var headers = Map.of(
-                ":message-type", HeaderValue.fromString("event"),
-                ":event-type", HeaderValue.fromString(typeHolder.get()),
-                ":content-type", HeaderValue.fromString(payloadMediaType));
+                ":message-type",
+                HeaderValue.fromString("event"),
+                ":event-type",
+                HeaderValue.fromString(typeHolder.get()),
+                ":content-type",
+                HeaderValue.fromString(payloadMediaType));
         return new AwsEventFrame(new Message(headers, payload));
     }
 
@@ -113,12 +113,14 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         AwsEventFrame frame;
         Schema exceptionSchema;
         if (exception instanceof ModeledException me
-                && (exceptionSchema = possibleExceptions.get(me.schema().id())) != null
-        ) {
+                && (exceptionSchema = possibleExceptions.get(me.schema().id())) != null) {
             var headers = Map.of(
-                    ":message-type", HeaderValue.fromString("exception"),
-                    ":exception-type", HeaderValue.fromString(exceptionSchema.memberName()),
-                    ":content-type", HeaderValue.fromString(payloadMediaType));
+                    ":message-type",
+                    HeaderValue.fromString("exception"),
+                    ":exception-type",
+                    HeaderValue.fromString(exceptionSchema.memberName()),
+                    ":content-type",
+                    HeaderValue.fromString(payloadMediaType));
             var payload = codec.serialize(me);
             var bytes = new byte[payload.remaining()];
             payload.get(bytes);
@@ -126,9 +128,12 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         } else {
             EventStreamingException es = exceptionHandler.apply(exception);
             var headers = Map.of(
-                    ":message-type", HeaderValue.fromString("error"),
-                    ":error-code", HeaderValue.fromString(es.getErrorCode()),
-                    ":error-message", HeaderValue.fromString(es.getMessage()));
+                    ":message-type",
+                    HeaderValue.fromString("error"),
+                    ":error-code",
+                    HeaderValue.fromString(es.getErrorCode()),
+                    ":error-message",
+                    HeaderValue.fromString(es.getMessage()));
             frame = new AwsEventFrame(new Message(headers, new byte[0]));
         }
         return frame;
@@ -144,7 +149,7 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         return Collections.unmodifiableSet(result);
     }
 
-    static Map<ShapeId, Schema>  possibleExceptions(Schema eventSchema) {
+    static Map<ShapeId, Schema> possibleExceptions(Schema eventSchema) {
         var result = new HashMap<ShapeId, Schema>();
         for (var memberSchema : eventSchema.members()) {
             if (memberSchema.hasTrait(TraitKey.ERROR_TRAIT)) {

@@ -5,12 +5,11 @@
 
 package software.amazon.smithy.java.core.serde.event;
 
-import software.amazon.smithy.java.core.schema.SerializableStruct;
-import software.amazon.smithy.java.core.serde.BufferingFlatMapProcessor;
-
 import java.nio.ByteBuffer;
 import java.util.concurrent.Flow;
 import java.util.stream.Stream;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.serde.BufferingFlatMapProcessor;
 
 public final class EventStreamFrameDecodingProcessor<F extends Frame<?>>
         extends BufferingFlatMapProcessor<ByteBuffer, SerializableStruct> {

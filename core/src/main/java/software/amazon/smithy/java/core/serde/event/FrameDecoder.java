@@ -5,11 +5,10 @@
 
 package software.amazon.smithy.java.core.serde.event;
 
-import software.amazon.smithy.java.core.schema.SerializableStruct;
-
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.Flow;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 
 /**
  * Decodes frames from bytes.
@@ -22,7 +21,6 @@ public interface FrameDecoder<F extends Frame<?>> {
      * @return all the frames readable from this pass
      */
     List<F> decode(ByteBuffer buffer);
-
 
     /**
      * Called once after building the publisher to allow the decoder to do any one-time setup prior to start processing

@@ -1,19 +1,21 @@
-package software.amazon.smithy.java.client.rpcv2;
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-import software.amazon.smithy.java.aws.events.AwsEventFrame;
+package software.amazon.smithy.java.aws.events;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Flow;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamFrameDecodingProcessor;
 import software.amazon.smithy.java.http.api.HttpResponse;
 import software.amazon.smithy.java.io.datastream.DataStream;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Flow;
-
 public final class RpcEventStreamResponse {
 
-    private RpcEventStreamResponse() {
-    }
+    private RpcEventStreamResponse() {}
 
     public static <O extends SerializableStruct> CompletableFuture<O> deserializeResponse(
             EventDecoderFactory<AwsEventFrame> eventDecoderFactory,
@@ -50,7 +52,6 @@ public final class RpcEventStreamResponse {
 
         return result;
     }
-
 
     private static DataStream bodyDataStream(HttpResponse response) {
         var contentType = response.headers().contentType();

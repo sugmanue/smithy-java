@@ -5,6 +5,8 @@
 
 package software.amazon.smithy.java.aws.events;
 
+import java.util.concurrent.Flow;
+import java.util.function.Supplier;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
@@ -14,9 +16,6 @@ import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
 import software.amazon.smithy.java.core.serde.event.EventDecoder;
-
-import java.util.concurrent.Flow;
-import java.util.function.Supplier;
 
 public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends SerializableStruct>
         implements EventDecoder<AwsEventFrame> {

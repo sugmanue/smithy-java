@@ -5,9 +5,8 @@
 
 package software.amazon.smithy.java.core.serde.event;
 
-import software.amazon.smithy.java.core.schema.SerializableStruct;
-
 import java.util.concurrent.Flow;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 
 public interface EventDecoder<F extends Frame<?>> {
 

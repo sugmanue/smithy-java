@@ -5,6 +5,7 @@
 
 package software.amazon.smithy.java.aws.events;
 
+import java.util.function.Supplier;
 import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
@@ -15,8 +16,6 @@ import software.amazon.smithy.java.core.serde.event.EventDecoder;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.FrameDecoder;
 import software.amazon.smithy.java.core.serde.event.FrameTransformer;
-
-import java.util.function.Supplier;
 
 public class AwsEventDecoderFactory<E extends SerializableStruct, IR extends SerializableStruct>
         implements EventDecoderFactory<AwsEventFrame> {

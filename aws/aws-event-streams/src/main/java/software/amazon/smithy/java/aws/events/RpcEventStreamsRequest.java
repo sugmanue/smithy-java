@@ -1,19 +1,21 @@
-package software.amazon.smithy.java.client.rpcv2;
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-import software.amazon.smithy.java.aws.events.AwsEventFrame;
+package software.amazon.smithy.java.aws.events;
+
+import java.nio.ByteBuffer;
+import java.util.concurrent.Flow;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamFrameEncodingProcessor;
 
-import java.nio.ByteBuffer;
-import java.util.concurrent.Flow;
-
 public final class RpcEventStreamsRequest {
 
-    private RpcEventStreamsRequest() {
-    }
+    private RpcEventStreamsRequest() {}
 
     public static Flow.Publisher<ByteBuffer> bodyForEventStreaming(
             EventEncoderFactory<AwsEventFrame> eventStreamEncodingFactory,
