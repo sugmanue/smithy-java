@@ -13,8 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import software.amazon.smithy.java.aws.events.AwsEventDecoderFactory;
 import software.amazon.smithy.java.aws.events.AwsEventEncoderFactory;
 import software.amazon.smithy.java.aws.events.AwsEventFrame;
-import software.amazon.smithy.java.aws.events.RpcEventStreamResponse;
-import software.amazon.smithy.java.aws.events.RpcEventStreamsRequest;
+import software.amazon.smithy.java.aws.events.RpcEventStreamsUtil;
 import software.amazon.smithy.java.cbor.Rpcv2CborCodec;
 import software.amazon.smithy.java.client.core.ClientProtocol;
 import software.amazon.smithy.java.client.core.ClientProtocolFactory;
@@ -79,7 +78,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         } else if (operation instanceof InputEventStreamingApiOperation<?, ?, ?> i) {
             // Event streaming
             var encoderFactory = getEventEncoderFactory(i);
-            var body = RpcEventStreamsRequest.bodyForEventStreaming(encoderFactory, input);
+            var body = RpcEventStreamsUtil.bodyForEventStreaming(encoderFactory, input);
             builder.headers(HttpHeaders.of(headersForEventStreaming()))
                     .body(body);
         } else {
@@ -107,7 +106,7 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
 
         if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
             var eventDecoderFactory = getEventDecoderFactory(o);
-            return RpcEventStreamResponse.deserializeResponse(eventDecoderFactory, response);
+            return RpcEventStreamsUtil.deserializeResponse(eventDecoderFactory, bodyDataStream(response));
         }
 
         var builder = operation.outputBuilder();
@@ -119,6 +118,12 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
         return content.asByteBuffer()
                 .thenApply(bytes -> CBOR_CODEC.deserializeShape(bytes, builder))
                 .toCompletableFuture();
+    }
+
+    private static DataStream bodyDataStream(HttpResponse response) {
+        var contentType = response.headers().contentType();
+        var contentLength = response.headers().contentLength();
+        return DataStream.withMetadata(response.body(), contentType, contentLength, null);
     }
 
     private DataStream getBody(SerializableStruct input) {

@@ -27,7 +27,7 @@ import software.amazon.smithy.java.core.serde.event.EventDecoder;
 public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends SerializableStruct>
         implements EventDecoder<AwsEventFrame> {
 
-    private final String initialEventType;
+    private final InitialEventType initialEventType;
     private final Supplier<ShapeBuilder<IR>> initialEventBuilder;
     private final Supplier<ShapeBuilder<E>> eventBuilder;
     private final Schema eventSchema;
@@ -35,7 +35,7 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     private volatile Flow.Publisher<SerializableStruct> publisher;
 
     AwsEventShapeDecoder(
-            String initialEventType,
+            InitialEventType initialEventType,
             Supplier<ShapeBuilder<IR>> initialEventBuilder,
             Supplier<ShapeBuilder<E>> eventBuilder,
             Schema eventSchema,
@@ -52,7 +52,7 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     public SerializableStruct decode(AwsEventFrame frame) {
         var message = frame.unwrap();
         var eventType = getEventType(message);
-        if (initialEventType.equals(eventType)) {
+        if (initialEventType.getName().equals(eventType)) {
             return decodeInitialResponse(frame);
         }
         return decodeEvent(frame);

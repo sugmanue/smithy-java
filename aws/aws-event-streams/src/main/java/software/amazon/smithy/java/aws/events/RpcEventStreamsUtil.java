@@ -5,26 +5,40 @@
 
 package software.amazon.smithy.java.aws.events;
 
+import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
+import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
+import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamFrameDecodingProcessor;
-import software.amazon.smithy.java.http.api.HttpResponse;
+import software.amazon.smithy.java.core.serde.event.EventStreamFrameEncodingProcessor;
 import software.amazon.smithy.java.io.datastream.DataStream;
 
 /**
- * A util class to deserialize event streams responses for RPC protocols.
+ * A util class to serialize and deserialize event streams responses for RPC protocols.
  */
-public final class RpcEventStreamResponse {
+public final class RpcEventStreamsUtil {
 
-    private RpcEventStreamResponse() {}
+    private RpcEventStreamsUtil() {}
+
+    public static Flow.Publisher<ByteBuffer> bodyForEventStreaming(
+            EventEncoderFactory<AwsEventFrame> eventStreamEncodingFactory,
+            SerializableStruct input
+    ) {
+        Flow.Publisher<SerializableStruct> eventStream = input.getMemberValue(streamingMember(input.schema()));
+        var publisher = EventStreamFrameEncodingProcessor.create(eventStream, eventStreamEncodingFactory);
+        // Queue the input as the initial-request.
+        publisher.onNext(input);
+        return publisher;
+    }
 
     public static <O extends SerializableStruct> CompletableFuture<O> deserializeResponse(
             EventDecoderFactory<AwsEventFrame> eventDecoderFactory,
-            HttpResponse response
+            DataStream bodyDataStream
     ) {
-        var bodyDataStream = bodyDataStream(response);
         var result = new CompletableFuture<O>();
         var processor = EventStreamFrameDecodingProcessor.create(bodyDataStream, eventDecoderFactory);
 
@@ -55,9 +69,13 @@ public final class RpcEventStreamResponse {
         return result;
     }
 
-    private static DataStream bodyDataStream(HttpResponse response) {
-        var contentType = response.headers().contentType();
-        var contentLength = response.headers().contentLength();
-        return DataStream.withMetadata(response.body(), contentType, contentLength, null);
+    private static Schema streamingMember(Schema schema) {
+        for (var member : schema.members()) {
+            if (member.isMember() && member.memberTarget().hasTrait(TraitKey.STREAMING_TRAIT)) {
+                return member;
+            }
+        }
+        throw new IllegalArgumentException("No streaming member found");
     }
+
 }

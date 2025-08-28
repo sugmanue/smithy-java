@@ -27,7 +27,7 @@ import software.amazon.smithy.java.core.serde.event.FrameTransformer;
 public final class AwsEventDecoderFactory<E extends SerializableStruct, IR extends SerializableStruct>
         implements EventDecoderFactory<AwsEventFrame> {
 
-    private final String initialEventType;
+    private final InitialEventType initialEventType;
     private final Supplier<ShapeBuilder<IR>> initialEventBuilder;
     private final Schema eventSchema;
     private final Codec codec;
@@ -35,7 +35,7 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
     private final FrameTransformer<AwsEventFrame> transformer;
 
     private AwsEventDecoderFactory(
-            String initialEventType,
+            InitialEventType initialEventType,
             Supplier<ShapeBuilder<IR>> initialEventBuilder,
             Schema eventSchema,
             Codec codec,
@@ -66,7 +66,7 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
             FrameTransformer<AwsEventFrame> transformer
     ) {
         return new AwsEventDecoderFactory<>(
-                "initial-request",
+                InitialEventType.INITIAL_REQUEST,
                 operation::inputBuilder,
                 operation.inputStreamMember(),
                 codec,
@@ -89,7 +89,7 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
             FrameTransformer<AwsEventFrame> transformer
     ) {
         return new AwsEventDecoderFactory<>(
-                "initial-response",
+                InitialEventType.INITIAL_RESPONSE,
                 operation::outputBuilder,
                 operation.outputStreamMember(),
                 codec,

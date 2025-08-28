@@ -29,7 +29,7 @@ import software.amazon.smithy.model.shapes.ShapeId;
 
 public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
-    private final String initialEventType;
+    private final InitialEventType initialEventType;
     private final Codec codec;
     private final String payloadMediaType;
     private final Set<String> possibleTypes;
@@ -37,7 +37,7 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     private final Function<Throwable, EventStreamingException> exceptionHandler;
 
     public AwsEventShapeEncoder(
-            String initialEventType,
+            InitialEventType initialEventType,
             Schema eventSchema,
             Codec codec,
             String payloadMediaType,
@@ -68,7 +68,7 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     private byte[] encodeInput(SerializableStruct item, AtomicReference<String> typeHolder) {
         if (isInitialRequest(item.schema())) {
             // The initial event is serialized fully instead of just a single member as for events.
-            typeHolder.compareAndSet(null, initialEventType);
+            typeHolder.compareAndSet(null, initialEventType.getName());
             var os = new ByteArrayOutputStream();
             try (var baseSerializer = codec.createSerializer(os)) {
                 SchemaUtils.withFilteredMembers(item.schema(), item, this::excludeEventStreamMember)

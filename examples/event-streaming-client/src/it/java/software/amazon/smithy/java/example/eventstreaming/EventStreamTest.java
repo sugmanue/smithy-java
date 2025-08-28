@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package software.amazon.smithy.java.example.eventstreaming;
+package softare.amazon.smithy.java.example.eventstreaming;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -88,10 +88,7 @@ public class EventStreamTest {
             }
 
             @Override
-            public void onError(Throwable throwable) {
-                System.out.println("Error: " + throwable.getMessage());
-                throwable.printStackTrace();
-            }
+            public void onError(Throwable throwable) { }
 
             @Override
             public void onComplete() {

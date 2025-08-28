@@ -20,14 +20,14 @@ import software.amazon.smithy.java.core.serde.event.FrameEncoder;
  * A {@link EventEncoderFactory} for AWS events.
  */
 public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEventFrame> {
-    private final String initialEventType;
+    private final InitialEventType initialEventType;
     private final Schema schema;
     private final Codec codec;
     private final String payloadMediaType;
     private final Function<Throwable, EventStreamingException> exceptionHandler;
 
     private AwsEventEncoderFactory(
-            String initialEventType,
+            InitialEventType initialEventType,
             Schema schema,
             Codec codec,
             String payloadMediaType,
@@ -55,7 +55,7 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
             String payloadMediaType,
             Function<Throwable, EventStreamingException> exceptionHandler
     ) {
-        return new AwsEventEncoderFactory("initial-request",
+        return new AwsEventEncoderFactory(InitialEventType.INITIAL_REQUEST,
                 operation.inputStreamMember(),
                 codec,
                 payloadMediaType,
@@ -77,7 +77,7 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
             String payloadMediaType,
             Function<Throwable, EventStreamingException> exceptionHandler
     ) {
-        return new AwsEventEncoderFactory("initial-response",
+        return new AwsEventEncoderFactory(InitialEventType.INITIAL_RESPONSE,
                 operation.outputStreamMember(),
                 codec,
                 payloadMediaType,
