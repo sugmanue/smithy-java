@@ -31,7 +31,7 @@ public final class RpcEventStreamsUtil {
         Flow.Publisher<SerializableStruct> eventStream = input.getMemberValue(streamingMember(input.schema()));
         var publisher = EventStreamFrameEncodingProcessor.create(eventStream, eventStreamEncodingFactory);
         // Queue the input as the initial-request.
-        publisher.onNext(input);
+        publisher.enqueueItem(input);
         return publisher;
     }
 
@@ -62,7 +62,7 @@ public final class RpcEventStreamsUtil {
 
             @Override
             public void onComplete() {
-                result.completeExceptionally(new RuntimeException("Unexpected vent stream completion"));
+                result.completeExceptionally(new RuntimeException("Unexpected event stream completion"));
             }
         });
 

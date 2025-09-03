@@ -9,5 +9,6 @@ extra["moduleName"] = "software.amazon.smithy.java.aws.events"
 
 dependencies {
     api(project(":core"))
+    implementation(project(":logging"))
     api("software.amazon.eventstream:eventstream:1.0.1")
 }
