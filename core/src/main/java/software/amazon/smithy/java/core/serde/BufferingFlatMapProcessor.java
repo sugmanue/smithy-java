@@ -64,16 +64,30 @@ public abstract class BufferingFlatMapProcessor<I, O> implements
 
     @Override
     public final void onNext(I item) {
-        enqueueItem(item);
-        flush();
-    }
-
-    protected final void enqueueItem(I item) {
         try {
             map(item).forEach(this::addToQueue);
         } catch (Exception e) {
             LOG.warn("Malformed input", e);
             onError(new SerializationException("Malformed input", e));
+            return;
+        }
+        flush();
+    }
+
+    /**
+     * Used to add the initial message to the queue. This message won't be sent until
+     * a flush happens, either by a calling {@link #request(long)} or {@link #onNext(Object)}.
+     * <p>
+     * This method will re-throw any exception caught when calling {@link #map} without calling
+     * {@link #onError(Throwable)} since it's assumed that the processor is not yet fully setup
+     * when this method is called.
+     */
+    protected final void enqueueItem(I item) {
+        try {
+            map(item).forEach(this::addToQueue);
+        } catch (RuntimeException e) {
+            LOG.warn("Malformed input", e);
+            throw e;
         }
     }
 
