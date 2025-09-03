@@ -42,13 +42,13 @@ public final class EventStreamFrameEncodingProcessor<F extends Frame<?>, T exten
     public static <F extends Frame<?>> EventStreamFrameEncodingProcessor<F, SerializableStruct> create(
             Flow.Publisher<SerializableStruct> publisher,
             EventEncoderFactory<F> encoderFactory,
-            SerializableStruct input
+            SerializableStruct firstItem
     ) {
         var processor = new EventStreamFrameEncodingProcessor<>(
                 publisher,
                 encoderFactory.newEventEncoder(),
                 encoderFactory.newFrameEncoder());
-        processor.enqueueItem(input);
+        processor.enqueueItem(firstItem);
         return processor;
     }
 
