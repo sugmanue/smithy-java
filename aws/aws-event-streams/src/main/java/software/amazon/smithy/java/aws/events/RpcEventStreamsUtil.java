@@ -29,10 +29,7 @@ public final class RpcEventStreamsUtil {
             SerializableStruct input
     ) {
         Flow.Publisher<SerializableStruct> eventStream = input.getMemberValue(streamingMember(input.schema()));
-        var publisher = EventStreamFrameEncodingProcessor.create(eventStream, eventStreamEncodingFactory);
-        // Queue the input as the initial-request.
-        publisher.enqueueItem(input);
-        return publisher;
+        return EventStreamFrameEncodingProcessor.create(eventStream, eventStreamEncodingFactory, input);
     }
 
     public static <O extends SerializableStruct> CompletableFuture<O> deserializeResponse(

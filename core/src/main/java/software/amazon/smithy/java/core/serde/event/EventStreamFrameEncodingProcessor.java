@@ -32,10 +32,24 @@ public final class EventStreamFrameEncodingProcessor<F extends Frame<?>, T exten
             Flow.Publisher<SerializableStruct> publisher,
             EventEncoderFactory<F> encoderFactory
     ) {
-        return new EventStreamFrameEncodingProcessor<>(
+        var processor = new EventStreamFrameEncodingProcessor<>(
                 publisher,
                 encoderFactory.newEventEncoder(),
                 encoderFactory.newFrameEncoder());
+        return processor;
+    }
+
+    public static <F extends Frame<?>> EventStreamFrameEncodingProcessor<F, SerializableStruct> create(
+            Flow.Publisher<SerializableStruct> publisher,
+            EventEncoderFactory<F> encoderFactory,
+            SerializableStruct input
+    ) {
+        var processor = new EventStreamFrameEncodingProcessor<>(
+                publisher,
+                encoderFactory.newEventEncoder(),
+                encoderFactory.newFrameEncoder());
+        processor.enqueueItem(input);
+        return processor;
     }
 
     @Override

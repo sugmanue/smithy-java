@@ -68,13 +68,7 @@ public abstract class BufferingFlatMapProcessor<I, O> implements
         flush();
     }
 
-    /**
-     * Adds the item to the queue for later delivery. The queue will get flushed upon calls to {@link #request} or
-     * {@link #onNext(Object)}.
-     *
-     * @param item The item to add to the queue
-     */
-    public final void enqueueItem(I item) {
+    protected final void enqueueItem(I item) {
         try {
             map(item).forEach(this::addToQueue);
         } catch (Exception e) {
