@@ -8,7 +8,7 @@ use smithy.protocols#rpcv2Cbor
     http: ["h2"]
     eventStreamHttp: ["h2"]
 )
-service TickService {
+service FizzBuzzService {
     operations: [
         FizzBuzz
     ]

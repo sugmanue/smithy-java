@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.java.client.core.endpoint.EndpointResolver;
-import software.amazon.smithy.java.example.eventstreaming.client.TickServiceClient;
+import software.amazon.smithy.java.example.eventstreaming.client.FizzBuzzServiceClient;
 import software.amazon.smithy.java.example.eventstreaming.model.BuzzEvent;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzInput;
 import software.amazon.smithy.java.example.eventstreaming.model.FizzBuzzOutput;
@@ -30,8 +30,8 @@ public class EventStreamTest {
 
     @Test
     public void fizzBuzz() throws InterruptedException {
-        var client = TickServiceClient.builder()
-                .endpointResolver(EndpointResolver.staticHost("http://localhost:8000"))
+        var client = FizzBuzzServiceClient.builder()
+                .endpointResolver(EndpointResolver.staticHost("http://localhost:9543"))
                 .build();
 
         int range = 100;
@@ -59,13 +59,13 @@ public class EventStreamTest {
             @Override
             public void onNext(FizzBuzzStream item) {
                 receivedEvents.incrementAndGet();
-                //LOGGER.info("received: {}", item);
+                LOGGER.info("received: {}", item);
                 long value;
                 try {
                     switch (item.type()) {
                         case fizz:
                             value = item.<FizzEvent>getValue().getValue();
-                            //LOGGER.info("received fizz: {}", value);
+                            LOGGER.info("received fizz: {}", value);
                             assertEquals(0, value % 3);
                             if (value % 5 == 0) {
                                 assertTrue(unbuzzed.add(value), "Fizz already received for " + value);
@@ -73,7 +73,7 @@ public class EventStreamTest {
                             break;
                         case buzz:
                             value = item.<BuzzEvent>getValue().getValue();
-                            //LOGGER.info("received buzz: {}", value);
+                            LOGGER.info("received buzz: {}", value);
                             assertEquals(0, value % 5);
                             if (value % 3 == 0) {
                                 assertTrue(unbuzzed.remove(value), "No fizz for " + value);
@@ -111,6 +111,12 @@ public class EventStreamTest {
                 throw new RuntimeException("Timed out waiting for completion after " + waits + " waits");
             }
         } while (!done.get());
+
+	if (!unbuzzed.isEmpty()) {
+		for (var i : unbuzzed) {
+			LOGGER.info(i + " was not buzzed");
+		}
+	}
 
         assertTrue(unbuzzed.isEmpty(), unbuzzed.size() + " unbuzzed fizzes");
         assertEquals((range / 3) + (range / 5), receivedEvents.get());
