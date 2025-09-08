@@ -87,15 +87,14 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
 
     private IR decodeInitialResponse(AwsEventFrame frame) {
         var message = frame.unwrap();
-        var codecDeserializer = codec.createDeserializer(message.getPayload());
         var builder = initialEventBuilder.get();
-        builder.deserialize(codecDeserializer);
         var publisherMember = getPublisherMember(builder.schema());
         // Set the publisher member
         var responseDeserializer = new InitialResponseDeserializer(publisherMember, publisher);
         builder.deserialize(responseDeserializer);
         // Deserialize the rest of the members if any
         var headers = message.getHeaders();
+        var codecDeserializer = codec.createDeserializer(message.getPayload());
         var deserializer = new EventStreamDeserializer(codecDeserializer, new HeadersDeserializer(headers));
         builder.deserialize(deserializer);
         return builder.build();
