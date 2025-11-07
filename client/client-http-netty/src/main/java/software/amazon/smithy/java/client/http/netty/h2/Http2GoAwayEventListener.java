@@ -20,8 +20,8 @@ import software.amazon.smithy.java.client.http.netty.NettyLogger;
  * <p>
  * For currently existing streams
  * <ul>
- * <li>Streams ≤ lastStreamId → Will be processed, wait for completion</li>
- * <li>>Streams > lastStreamId → Were NOT processed, safe to retry elsewhere</li>
+ *   <li>Streams ≤ lastStreamId → Will be processed, wait for completion</li>
+ *   <li>>Streams > lastStreamId → Were NOT processed, safe to retry elsewhere</li>
  * </ul>
  */
 final class Http2GoAwayEventListener extends Http2ConnectionAdapter {
@@ -41,6 +41,7 @@ final class Http2GoAwayEventListener extends Http2ConnectionAdapter {
             multiplexedChannel.handleGoAway(lastStreamId, exception);
             return;
         }
+        // The channel is not fully setup yet, just close it.
         var channelPool = parentChannel.attr(HTTP2_MULTIPLEXED_CONNECTION_POOL).get();
         if (channelPool != null) {
             channelPool.closeAndReleaseParent(parentChannel, exception);

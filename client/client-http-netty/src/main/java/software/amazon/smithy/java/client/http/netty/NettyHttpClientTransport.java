@@ -35,6 +35,15 @@ public final class NettyHttpClientTransport implements Closeable, ClientTranspor
         this.client = new NettyHttpClient(builder);
     }
 
+    /**
+     * Creates a builder that can be used to fine-tuning the client settings.
+     *
+     * @return A builder that can be used to fine-tuning the client settings.
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
     @Override
     public HttpResponse send(Context context, HttpRequest request) {
         return client.send(request).join();
@@ -51,12 +60,54 @@ public final class NettyHttpClientTransport implements Closeable, ClientTranspor
     }
 
     /**
-     * Creates a builder that can be used to fine-tuning the client settings.
-     *
-     * @return A builder that can be used to fine-tuning the client settings.
+     * Configuration presets for different H2 usage scenarios. Each setting can set by using a
+     * {@link H2ConfigurationBuilder},
+     * <p>
+     * TODO(sugmanue, 2025/11/03): Review that those values are adequate.
      */
-    public static Builder builder() {
-        return new Builder();
+    public enum H2Preset {
+        /**
+         * Small payload uses a initial window size of 64KB, a high concurrency of 200 streams per connection and a
+         * medium frame size of 16KB.
+         */
+        SMALL_PAYLOAD() {
+            public void configure(H2ConfigurationBuilder builder) {
+                // 64KB
+                builder.initialWindowSize(64 * 1024);
+                // Higher concurrency
+                builder.maxConcurrentStreams(200);
+                // Default frame size
+                builder.maxFrameSize(16 * 1024);
+            }
+        },
+        /**
+         * Large payload uses a initial window size of 1Mb, a low concurrency of 50 streams per connection and a large
+         * frame size of 64KB.
+         */
+        LARGE_PAYLOAD() {
+            public void configure(H2ConfigurationBuilder builder) {
+                // 1 MB
+                builder.initialWindowSize(1024 * 1024);
+                // Lower concurrency
+                builder.maxConcurrentStreams(50);
+                // Larger frames
+                builder.maxFrameSize(64 * 1024);
+
+            }
+        },
+        /**
+         * High latency uses a large initial window size of 2Mb to reduce round trips and a large frame size of 64KB.
+         */
+        HIGH_LATENCY() {
+            public void configure(H2ConfigurationBuilder builder) {
+                // 2MB - compensate for round-trip delay
+                builder.initialWindowSize(2 * 1024 * 1024);
+                // Larger frames reduce overhead
+                builder.maxFrameSize(64 * 1024);
+            }
+        };
+
+        public abstract void configure(H2ConfigurationBuilder builder);
     }
 
     /**
@@ -177,9 +228,9 @@ public final class NettyHttpClientTransport implements Closeable, ClientTranspor
      * Builder for the Netty HTTP client transport configuration.
      */
     public static class Builder {
-        private static Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(5);
-        private static Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(30);
-        private static Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
+        private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(5);
+        private static final Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(30);
+        private static final Duration DEFAULT_WRITE_TIMEOUT = Duration.ofSeconds(30);
         // Default HTTP version is HTTP 1.1.
         private HttpVersion httpVersion = HttpVersion.HTTP_1_1;
         // Zero will use the Netty default number of threads (processors * 2)
@@ -312,136 +363,6 @@ public final class NettyHttpClientTransport implements Closeable, ClientTranspor
     }
 
     /**
-     * Configuration presets for different H2 usage scenarios. Each setting can set by using a
-     * {@link H2ConfigurationBuilder},
-     * <p>
-     * TODO(sugmanue, 2025/11/03): Review that those values are adequate.
-     */
-    public enum H2Preset {
-        /**
-         * Small payload uses a initial window size of 64KB, a high concurrency of 200 streams per connection and a
-         * medium frame size of 16KB.
-         */
-        SMALL_PAYLOAD() {
-            public void configure(H2ConfigurationBuilder builder) {
-                // 64KB
-                builder.initialWindowSize(64 * 1024);
-                // Higher concurrency
-                builder.maxConcurrentStreams(200);
-                // Default frame size
-                builder.maxFrameSize(16 * 1024);
-            }
-        },
-        /**
-         * Large payload uses a initial window size of 1Mb, a low concurrency of 50 streams per connection and a large
-         * frame size of 64KB.
-         */
-        LARGE_PAYLOAD() {
-            public void configure(H2ConfigurationBuilder builder) {
-                // 1 MB
-                builder.initialWindowSize(1024 * 1024);
-                // Lower concurrency
-                builder.maxConcurrentStreams(50);
-                // Larger frames
-                builder.maxFrameSize(64 * 1024);
-
-            }
-        },
-        /**
-         * High latency uses a large initial window size of 2Mb to reduce round trips and a large frame size of 64KB.
-         */
-        HIGH_LATENCY() {
-            public void configure(H2ConfigurationBuilder builder) {
-                // 2MB - compensate for round-trip delay
-                builder.initialWindowSize(2 * 1024 * 1024);
-                // Larger frames reduce overhead
-                builder.maxFrameSize(64 * 1024);
-            }
-        };
-
-        public abstract void configure(H2ConfigurationBuilder builder);
-    }
-
-    /**
-     * A H2 settings configuration builder.
-     */
-    public static class H2ConfigurationBuilder {
-        private long maxConcurrentStreams = (1L << 32) - 1;
-        private int initialWindowSize = 64 * 1024;
-        private int maxFrameSize = 16 * 1024;
-
-        /**
-         * Sets the maximum number of concurrent streams allowed on a single HTTP/2 connection.
-         *
-         * <p> This limit prevents resource exhaustion by controlling how many simultaneous requests can be
-         * processed. Higher values enable better connection utilization but increase memory and CPU overhead. Lower
-         * values reduce resource usage but may limit throughput for clients making many parallel requests. Default is
-         * unlimited (2^32-1), but production systems typically set values between 25-500 based on expected load and
-         * available resources.
-         *
-         * @param maxConcurrentStreams the maximum concurrent streams, must be positive
-         * @return this builder instance for method chaining
-         */
-        public H2ConfigurationBuilder maxConcurrentStreams(long maxConcurrentStreams) {
-            if (maxConcurrentStreams < 0) {
-                throw new IllegalArgumentException(
-                        "maxStreamsPerConnection cannot be negative, got: " + maxConcurrentStreams);
-            }
-
-            this.maxConcurrentStreams = maxConcurrentStreams;
-            return this;
-        }
-
-        /**
-         * Sets the initial window size for HTTP/2 flow control on new streams.
-         *
-         * <p> This value determines how much data can be sent on a stream before requiring a WINDOW_UPDATE frame from
-         * the receiver. Larger values improve throughput by reducing round-trips but increase memory usage. Smaller
-         * values conserve memory but may limit performance on high-bandwidth or high-latency connections.  Default is
-         * 65,535 bytes (64KB). Typical values range from 32KB (memory-constrained) to 2MB (high-throughput scenarios).
-         *
-         * @param initialWindowSize the initial window size in bytes, must be positive
-         * @return this builder instance for method chaining
-         */
-        public H2ConfigurationBuilder initialWindowSize(int initialWindowSize) {
-            if (initialWindowSize < 0) {
-                throw new IllegalArgumentException("initialWindowSize cannot be negative, got: " + initialWindowSize);
-            }
-            this.initialWindowSize = initialWindowSize;
-            return this;
-        }
-
-        /**
-         * Sets the maximum size of HTTP/2 frames that can be received.
-         *
-         * <p> Larger frame sizes reduce protocol overhead by packing more data per frame but increase memory
-         * requirements and may impact latency for small messages.  Smaller frames provide better multiplexing
-         * granularity and lower memory usage per frame. Default is 16,384 bytes (16KB). Valid range is 16KB to 16MB,
-         * with typical production values between 16KB (low-latency) and 64KB (high-throughput).
-         *
-         * @param maxFrameSize the maximum frame size in bytes, must be between 16384 and 16777215
-         * @return this builder instance for method chaining
-         */
-        public H2ConfigurationBuilder maxFrameSize(int maxFrameSize) {
-            if (maxFrameSize < 0) {
-                throw new IllegalArgumentException("maxFrameSize cannot be negative, got: " + maxFrameSize);
-            }
-            if (maxFrameSize < 16 * 1024) {
-                throw new IllegalArgumentException("maxFrameSize cannot be less than 16KB, got: " + maxFrameSize);
-            }
-            if (maxFrameSize > 16 * 1024 * 1024) {
-                throw new IllegalArgumentException("maxFrameSize cannot be grater than 16MB, got: " + maxFrameSize);
-            }
-            this.maxFrameSize = maxFrameSize;
-            return this;
-        }
-
-        public H2Configuration build() {
-            return new H2Configuration(this);
-        }
-    }
-
-    /**
      * Configuration settings for H2 only.
      */
     public static class H2Configuration {
@@ -488,6 +409,99 @@ public final class NettyHttpClientTransport implements Closeable, ClientTranspor
          */
         public int maxFrameSize() {
             return maxFrameSize;
+        }
+    }
+
+    /**
+     * A H2 settings configuration builder.
+     */
+    public static class H2ConfigurationBuilder {
+        /**
+         * H2 default for max concurrent streams is 2^32 - 1 (max unsigned 32-bit integer).
+         */
+        public static final long DEFAULT_MAX_CONCURRENT_STREAMS = (1L << 32) - 1;
+        /**
+         * H2 default for initial window size is 64 KB
+         */
+        public static final int DEFAULT_INITIAL_WINDOW_SIZE = 64 * 1024;
+        /**
+         * H2 default for max frame size is 16 KB
+         */
+        public static final int DEFAULT_MAX_FRAME_SIZE = 16 * 1024;
+
+        private long maxConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
+        private int initialWindowSize = DEFAULT_INITIAL_WINDOW_SIZE;
+        private int maxFrameSize = DEFAULT_MAX_FRAME_SIZE;
+
+        /**
+         * Sets the maximum number of concurrent streams allowed on a single HTTP/2 connection.
+         *
+         * <p> This limit prevents resource exhaustion by controlling how many simultaneous requests can be
+         * processed. Higher values enable better connection utilization but increase memory and CPU overhead. Lower
+         * values reduce resource usage but may limit throughput for clients making many parallel requests. Default is
+         * unlimited (2^32-1), but production systems typically set values between 25-500 based on expected load and
+         * available resources.
+         *
+         * @param maxConcurrentStreams the maximum concurrent streams, must be positive
+         * @return this builder instance for method chaining
+         */
+        public H2ConfigurationBuilder maxConcurrentStreams(long maxConcurrentStreams) {
+            if (maxConcurrentStreams <= 0) {
+                throw new IllegalArgumentException(
+                        "maxStreamsPerConnection cannot be negative or zero, got: " + maxConcurrentStreams);
+            }
+
+            this.maxConcurrentStreams = maxConcurrentStreams;
+            return this;
+        }
+
+        /**
+         * Sets the initial window size for HTTP/2 flow control on new streams.
+         *
+         * <p> This value determines how much data can be sent on a stream before requiring a WINDOW_UPDATE frame from
+         * the receiver. Larger values improve throughput by reducing round-trips but increase memory usage. Smaller
+         * values conserve memory but may limit performance on high-bandwidth or high-latency connections.  Default is
+         * 65,535 bytes (64KB). Typical values range from 32KB (memory-constrained) to 2MB (high-throughput scenarios).
+         *
+         * @param initialWindowSize the initial window size in bytes, must be positive
+         * @return this builder instance for method chaining
+         */
+        public H2ConfigurationBuilder initialWindowSize(int initialWindowSize) {
+            if (initialWindowSize <= 0) {
+                throw new IllegalArgumentException(
+                        "initialWindowSize cannot be negative or zero, got: " + initialWindowSize);
+            }
+            this.initialWindowSize = initialWindowSize;
+            return this;
+        }
+
+        /**
+         * Sets the maximum size of HTTP/2 frames that can be received.
+         *
+         * <p> Larger frame sizes reduce protocol overhead by packing more data per frame but increase memory
+         * requirements and may impact latency for small messages.  Smaller frames provide better multiplexing
+         * granularity and lower memory usage per frame. Default is 16,384 bytes (16KB). Valid range is 16KB to 16MB,
+         * with typical production values between 16KB (low-latency) and 64KB (high-throughput).
+         *
+         * @param maxFrameSize the maximum frame size in bytes, must be between 16384 and 16777215
+         * @return this builder instance for method chaining
+         */
+        public H2ConfigurationBuilder maxFrameSize(int maxFrameSize) {
+            if (maxFrameSize < 0) {
+                throw new IllegalArgumentException("maxFrameSize cannot be negative, got: " + maxFrameSize);
+            }
+            if (maxFrameSize < 16 * 1024) {
+                throw new IllegalArgumentException("maxFrameSize cannot be less than 16KB, got: " + maxFrameSize);
+            }
+            if (maxFrameSize > 16 * 1024 * 1024) {
+                throw new IllegalArgumentException("maxFrameSize cannot be grater than 16MB, got: " + maxFrameSize);
+            }
+            this.maxFrameSize = maxFrameSize;
+            return this;
+        }
+
+        public H2Configuration build() {
+            return new H2Configuration(this);
         }
     }
 }

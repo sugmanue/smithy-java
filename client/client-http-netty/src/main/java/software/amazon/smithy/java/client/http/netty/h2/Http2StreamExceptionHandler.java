@@ -12,6 +12,11 @@ import io.netty.handler.timeout.TimeoutException;
 import java.io.IOException;
 import software.amazon.smithy.java.client.http.netty.NettyLogger;
 
+/**
+ * An exception handler attached to streams. I/O or timeout exceptions caught on a stream
+ * will close the parent channel to new streams and eventually release it when all the
+ * streams have been closed.
+ */
 @ChannelHandler.Sharable
 final class Http2StreamExceptionHandler extends ChannelInboundHandlerAdapter {
     private static final NettyLogger LOGGER = NettyLogger.getLogger(Http2StreamExceptionHandler.class);

@@ -23,6 +23,8 @@ final class ReleaseOnExceptionHandler extends ChannelDuplexHandler {
     private static final ClosedChannelException CLOSED_CHANNEL_EXCEPTION = new ClosedChannelException();
     private static final ReleaseOnExceptionHandler INSTANCE = new ReleaseOnExceptionHandler();
 
+    private ReleaseOnExceptionHandler() {}
+
     public static ReleaseOnExceptionHandler getInstance() {
         return INSTANCE;
     }
@@ -42,9 +44,9 @@ final class ReleaseOnExceptionHandler extends ChannelDuplexHandler {
     }
 
     void closeConnectionToNewStreams(ChannelHandlerContext ctx, Http2ConnectionTerminatingException cause) {
-        var state = ctx.channel().attr(MULTIPLEXED_CHANNEL).get();
-        if (state != null) {
-            state.closeToNewStreams();
+        var multiplexedChannel = ctx.channel().attr(MULTIPLEXED_CHANNEL).get();
+        if (multiplexedChannel != null) {
+            multiplexedChannel.closeToNewStreams();
         } else {
             closeAndReleaseParent(ctx, cause);
         }

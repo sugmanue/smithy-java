@@ -28,12 +28,12 @@ final class NettyDataStream implements DataStream {
     private final Channel channel;
 
     private final ConcurrentLinkedQueue<ByteBuffer> queue = new ConcurrentLinkedQueue<>();
-    private volatile Flow.Subscriber<? super ByteBuffer> subscriber;
     private final AtomicBoolean subscribed = new AtomicBoolean(false);
     private final AtomicLong requested = new AtomicLong(0);
     private final AtomicBoolean completed = new AtomicBoolean(false);
     private final AtomicBoolean errored = new AtomicBoolean(false);
     private final AtomicReference<Throwable> error = new AtomicReference<>();
+    private volatile Flow.Subscriber<? super ByteBuffer> subscriber;
 
     NettyDataStream(String contentType, long contentLength, Channel channel) {
         this.contentType = contentType;
@@ -97,7 +97,7 @@ final class NettyDataStream implements DataStream {
             return;
         }
         if (errored.get()) {
-            Throwable pendingError = error.get();
+            var pendingError = error.get();
             if (pendingError != null && error.compareAndSet(pendingError, null)) {
                 subscriber.onError(pendingError);
             }

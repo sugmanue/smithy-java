@@ -40,23 +40,6 @@ final class NettyHttpClient implements Closeable {
         this.channelPoolMap = new ChannelPoolMap(config);
     }
 
-    /**
-     * Sends the HTTP request and returns a future with the HTTP response.
-     */
-    public CompletableFuture<HttpResponse> send(HttpRequest request) {
-        var responseFuture = new CompletableFuture<HttpResponse>();
-        var handler = new ChannelAcquiredHandler(request, responseFuture, config);
-        var channelFuture = channelPoolMap.<Channel>newPromise();
-        channelPoolMap.channelPool(request.uri()).acquire(channelFuture);
-        channelFuture.addListener(handler::handleChannelAcquired);
-        return responseFuture;
-    }
-
-    @Override
-    public void close() {
-        channelPoolMap.close();
-    }
-
     private static void sendHttpRequest(
             Channel channel,
             HttpRequest request,
@@ -192,6 +175,22 @@ final class NettyHttpClient implements Closeable {
             path += "?" + query;
         }
         return path;
+    }
+
+    /**
+     * Sends the HTTP request and returns a future with the HTTP response.
+     */
+    public CompletableFuture<HttpResponse> send(HttpRequest request) {
+        var responseFuture = new CompletableFuture<HttpResponse>();
+        var channelFuture = channelPoolMap.acquire(request.uri());
+        var handler = new ChannelAcquiredHandler(request, responseFuture, config);
+        channelFuture.addListener(handler::handleChannelAcquired);
+        return responseFuture;
+    }
+
+    @Override
+    public void close() {
+        channelPoolMap.close();
     }
 
     static class ChannelAcquiredHandler {

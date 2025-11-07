@@ -23,7 +23,7 @@ public final class NettyConstants {
     public static final String PROTOCOL_NEGOTIATION = "smithy.netty.protocol-negotiation";
 
     // Channel attributes
-    static final AttributeKey<CompletableFuture<HttpVersion>> HTTP_VERSION_FUTURE =
+    public static final AttributeKey<CompletableFuture<HttpVersion>> HTTP_VERSION_FUTURE =
             AttributeKey.valueOf("smithy.netty.http-version");
     public static final AttributeKey<ChannelPool> CHANNEL_POOL =
             AttributeKey.valueOf("aws.http.nio.netty.async.ChannelPool");

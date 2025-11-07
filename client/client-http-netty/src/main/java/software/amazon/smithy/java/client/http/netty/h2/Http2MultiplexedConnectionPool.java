@@ -17,18 +17,24 @@ import io.netty.channel.Channel;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.pool.ChannelPool;
 import io.netty.handler.codec.http2.Http2Exception;
+import io.netty.handler.codec.http2.Http2StreamChannelBootstrap;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.PromiseCombiner;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import software.amazon.smithy.java.client.core.error.TransportException;
-import software.amazon.smithy.java.client.core.error.TransportProtocolException;
 import software.amazon.smithy.java.client.http.netty.NettyLogger;
+import software.amazon.smithy.java.client.http.netty.NettyUtils;
 import software.amazon.smithy.java.http.api.HttpVersion;
 
 /**
@@ -36,39 +42,132 @@ import software.amazon.smithy.java.http.api.HttpVersion;
  */
 class Http2MultiplexedConnectionPool implements ChannelPool {
     private static final AttributeKey<Boolean> RELEASED = AttributeKey.valueOf(
-            "software.amazon.awssdk.http.nio.netty.internal.http2.Http2MultiplexedChannelPool.RELEASED");
+            "smithy.netty.h2.released-connection-pool");
     private static final NettyLogger LOGGER = NettyLogger.getLogger(Http2MultiplexedConnectionPool.class);
-
+    private final Semaphore initSemaphore = new Semaphore(1);
     private final ChannelPool channelPool;
     private final EventLoopGroup eventLoopGroup;
-    private final Set<MultiplexedChannelState> channels;
+    private final Http2StreamBootstrap streamBootstrap;
+    private final MultiplexedChannelFactory multiplexedChannelFactory;
+    private final Set<MultiplexedChannel> channels;
     private final AtomicBoolean closed = new AtomicBoolean();
 
+    /**
+     * Creates a new connection pool with the given channel pool to create HTTP/2 connected channels and with the given
+     * event loop group to be used by Netty.
+     *
+     * @param channelPool    The channel pool to create HTTP/2 connected channels
+     * @param eventLoopGroup The event loop to be used with Netty
+     */
     Http2MultiplexedConnectionPool(ChannelPool channelPool, EventLoopGroup eventLoopGroup) {
-        this.channelPool = channelPool;
-        this.eventLoopGroup = eventLoopGroup;
-        this.channels = ConcurrentHashMap.newKeySet();
+        this(channelPool,
+                eventLoopGroup,
+                (channel) -> new Http2StreamChannelBootstrap(channel).open(),
+                MultiplexedChannel::new);
     }
 
+    /**
+     * This constructor is only used for testing to allow overriding the logic to bootstrap and open streams
+     * from an HTTP/2 channel.
+     */
+    Http2MultiplexedConnectionPool(
+            ChannelPool channelPool,
+            EventLoopGroup eventLoopGroup,
+            Http2StreamBootstrap streamBootstrap,
+            MultiplexedChannelFactory multiplexedChannelFactory
+    ) {
+        this.channelPool = channelPool;
+        this.eventLoopGroup = eventLoopGroup;
+        this.streamBootstrap = streamBootstrap;
+        this.channels = ConcurrentHashMap.newKeySet();
+        this.multiplexedChannelFactory = multiplexedChannelFactory;
+    }
+
+    /**
+     * This is called to request the expansion of the window size published by this endpoint.
+     */
+    private static void tryExpandConnectionWindow(Channel channel) {
+        var http2Connection = channel.attr(HTTP2_CONNECTION).get();
+        var initialWindowSize = channel.attr(HTTP2_INITIAL_WINDOW_SIZE).get();
+        var connectionStream = http2Connection.connectionStream();
+        LOGGER.debug(channel, "Expanding connection window of size {}", initialWindowSize);
+        try {
+            var localFlowController = http2Connection.local().flowController();
+            localFlowController.incrementWindowSize(connectionStream, initialWindowSize);
+        } catch (Http2Exception e) {
+            LOGGER.warn(channel, "Failed to expand window of size {}", initialWindowSize, e);
+        }
+    }
+
+    /**
+     * Acquires a channel from the pool, reusing existing multiplexed connections when possible.
+     *
+     * @return A future that is notified once the acquire is successful and failed otherwise.
+     */
     @Override
     public Future<Channel> acquire() {
-        Promise<Channel> promise = eventLoopGroup.next().newPromise();
+        var promise = eventLoopGroup.next().<Channel>newPromise();
         return acquire(promise);
     }
 
+    /**
+     * Acquires a channel from the pool, reusing existing multiplexed connections when possible.
+     *
+     * @param acquirePromise the promise to complete when a channel is acquired
+     * @return A future that is notified once the acquire is successful and failed otherwise.
+     */
     @Override
-    public Future<Channel> acquire(Promise<Channel> promise) {
+    public Future<Channel> acquire(Promise<Channel> acquirePromise) {
+        Objects.requireNonNull(acquirePromise, "acquirePromise");
         if (closed.get()) {
-            promise.setFailure(new TransportException("Channel pool is closed"));
+            acquirePromise.setFailure(new TransportException("Channel pool is closed"));
+            return acquirePromise;
         }
-        for (var multiplexedChannel : channels) {
-            if (multiplexedChannel.tryAcquire(promise)) {
-                return promise;
+
+        while (true) {
+            // Try existing channels first
+            for (var multiplexedChannel : channels) {
+                if (multiplexedChannel.tryAcquire(acquirePromise)) {
+                    acquirePromise.addListener(new AddConnectionPoolAttribute(this));
+                    return acquirePromise;
+                }
+            }
+
+            // Need new channel - synchronize to avoid creating two channels with
+            // one stream each instead of two streams from the same channel.
+            var currentCount = channels.size();
+            var acquired = false;
+            try {
+                initSemaphore.acquire();
+                acquired = true;
+
+                // Double-check: did someone else add a channel?
+                if (channels.size() > currentCount) {
+                    initSemaphore.release();
+                    acquired = false;
+                    continue; // Retry with new channel
+                }
+
+                // Create new parent channel
+                var newParent = channelPool.acquire();
+                newParent.addListener(new NewParentAcquiredListener(acquirePromise, this));
+
+                // Release semaphore when acquire completes (success or failure)
+                acquirePromise.addListener(new ReleaseSemaphoreWhenDone(initSemaphore));
+                return acquirePromise;
+            } catch (InterruptedException e) {
+                // Acquiring the semaphore threw, the permit was not acquired.
+                Thread.currentThread().interrupt();
+                acquirePromise.setFailure(new TransportException("Interrupted", e));
+                return acquirePromise;
+            } catch (Exception e) {
+                if (acquired) {
+                    initSemaphore.release();
+                }
+                acquirePromise.setFailure(e);
+                return acquirePromise;
             }
         }
-        // We need to create a new parent connection
-        acquireStreamOnNewConnection(promise);
-        return promise;
     }
 
     @Override
@@ -81,28 +180,30 @@ class Http2MultiplexedConnectionPool implements ChannelPool {
     public Future<Void> release(Channel stream, Promise<Void> promise) {
         var parent = stream.parent();
         if (parent == null) {
-            // This isn't a h2 stream channel. Warn about it and close the channel.
-            LOGGER.warn(stream, "Release called on a non-h2 stream, closing the channel");
-            closeAndReleaseParent(stream);
-            return promise
-                    .setFailure(new TransportException("Channel (" + stream + ") is not a h2 stream."));
+            // This method should be called with HTTP/2 streams, and those
+            // have a parent. This is unexpected.
+            var message = "Release attempt on a non HTTP/2 stream";
+            closeAndReleaseParent(stream, null);
+            NettyUtils.Asserts.shouldNotBeReached(stream, message);
+            return promise.setFailure(new TransportException(message));
         }
 
         var multiplexedChannel = parent.attr(MULTIPLEXED_CHANNEL).get();
         if (multiplexedChannel == null) {
-            // This is a h2 stream channel, but there is no attached multiplexed channel,
-            // which there should be if it was from this pool. Close it and log an error.
-            var message = "Channel (" + stream + ") is not associated with a multiplexed channel. "
-                    + "It will be closed, but cannot be released within this pool.";
-            var exception = new TransportException(message);
-            LOGGER.warn(stream, message);
+            // This is channel has a parent, and there is no attached multiplexed channel, but
+            // we make sure that there is one before returning the first stream to the caller.
+            // This is unexpected.
+            var message = "Release attempt on a HTTP/2 stream without a multiplexed channel";
             stream.close();
-            return promise.setFailure(exception);
+            NettyUtils.Asserts.shouldNotBeReached(stream, message);
+            return promise.setFailure(new TransportException(message));
         }
+
         multiplexedChannel.closeAndReleaseStream(stream);
         if (multiplexedChannel.canBeClosedAndReleased()) {
             // There are no more outstanding streams in this channel,
-            // and it's ready to be closed.
+            // and it's ready to be closed. Close and release
+            // the parent to the channel pool.
             return closeAndReleaseParent(parent, null, promise);
         }
         return promise.setSuccess(null);
@@ -114,7 +215,7 @@ class Http2MultiplexedConnectionPool implements ChannelPool {
             var closeCompleteFuture = submitClose();
             try {
                 if (!closeCompleteFuture.await(5, TimeUnit.SECONDS)) {
-                    throw new TransportException("Event loop didn't close after 5 seconds.");
+                    throw new TransportException("Failed to finish closing all connections after 5 seconds.");
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -128,6 +229,73 @@ class Http2MultiplexedConnectionPool implements ChannelPool {
         }
     }
 
+    /**
+     * Called when there's an issue with the parent channel. This call closes all streams on the channel and then
+     * closes the channel itself and releases it to its channel pool/
+     *
+     * @param parentChannel The parent channel to close
+     * @param cause         An optional exception used to notify and close its streams
+     * @return A future that will be notified when the close is complete.
+     */
+    public Future<Void> closeAndReleaseParent(Channel parentChannel, Throwable cause) {
+        return closeAndReleaseParent(parentChannel, cause, newPromise());
+    }
+
+    private Future<Void> closeAndReleaseParent(Channel parentChannel, Throwable cause, Promise<Void> resultPromise) {
+        if (parentChannel.parent() != null) {
+            // This is NOT a parent channel. This should NOT happen, notify that something is wrong.
+            var message = "Channel (" + parentChannel + ") is not a parent channel. It will be closed, "
+                    + "but cannot be released within this pool.";
+            var exception = new TransportException(message, cause);
+            LOGGER.error(parentChannel, message, cause);
+            parentChannel.close();
+            NettyUtils.Asserts.shouldNotBeReached(parentChannel, message);
+            return resultPromise.setFailure(exception);
+        }
+
+        var multiplexedChannel = parentChannel.attr(MULTIPLEXED_CHANNEL).get();
+
+        // We may not have a multiplexed channel if the parent channel hasn't been fully initialized.
+        if (multiplexedChannel != null) {
+            multiplexedChannel.close(cause);
+            channels.remove(multiplexedChannel);
+        }
+        parentChannel.close();
+        if (parentChannel.attr(RELEASED).getAndSet(Boolean.TRUE) == null) {
+            return channelPool.release(parentChannel, resultPromise);
+        }
+        return resultPromise.setSuccess(null);
+    }
+
+    /**
+     * Returns the count of parent channels in this pool.
+     */
+    int parentCount() {
+        return channels.size();
+    }
+
+    /**
+     * Returns the class used to boostrap and open streams.
+     *
+     * @return the class used to boostrap and open streams
+     */
+    private Http2StreamBootstrap streamBootstrap() {
+        return streamBootstrap;
+    }
+
+    /**
+     * Returns a new multiplexed channel using the configured factory.
+     *
+     * @return The new multiplexed channel
+     */
+    private MultiplexedChannel createMultiplexedChannel(Channel parentChannel, int maxConcurrentStreams) {
+        return multiplexedChannelFactory.createChannel(parentChannel, maxConcurrentStreams, streamBootstrap());
+    }
+
+    private <T> Promise<T> newPromise() {
+        return eventLoopGroup.next().newPromise();
+    }
+
     private Future<?> submitClose() {
         var closeEventLoop = eventLoopGroup.next();
         var closeFinishedPromise = closeEventLoop.newPromise();
@@ -135,7 +303,7 @@ class Http2MultiplexedConnectionPool implements ChannelPool {
             var promiseCombiner = new PromiseCombiner(closeEventLoop);
             var channelsToRemove = new ArrayList<>(channels);
             for (var multiplexedChannel : channelsToRemove) {
-                promiseCombiner.add(closeAndReleaseParent(multiplexedChannel.getConnection()));
+                promiseCombiner.add(closeAndReleaseParent(multiplexedChannel.parentChannel(), null));
             }
             var releaseAllChannelsPromise = closeEventLoop.<Void>newPromise();
             promiseCombiner.finish(releaseAllChannelsPromise);
@@ -148,161 +316,241 @@ class Http2MultiplexedConnectionPool implements ChannelPool {
         return closeFinishedPromise;
     }
 
-    private void acquireStreamOnNewConnection(Promise<Channel> promise) {
-        var newConnectionAcquire = channelPool.acquire();
-        newConnectionAcquire.addListener(f -> {
-            if (!newConnectionAcquire.isSuccess()) {
-                promise.setFailure(newConnectionAcquire.cause());
-                return;
-            }
-
-            var parentChannel = newConnectionAcquire.getNow();
-            // When the protocol future is completed on the new connection,
-            // we're ready for new streams to be added to it.
-            var protocol = parentChannel.attr(HTTP_VERSION_FUTURE).get().get();
-
-            if (protocol == HttpVersion.HTTP_2) {
-                parentChannel.attr(HTTP2_MULTIPLEXED_CONNECTION_POOL).set(this);
-                acquireStreamOnFreshConnection(promise, parentChannel, protocol);
-            } else {
-                var exception = new TransportProtocolException("Unsupported protocol: " + protocol);
-                failAndCloseParent(promise, parentChannel, exception);
-            }
-        });
-    }
-
-    private void acquireStreamOnFreshConnection(Promise<Channel> promise, Channel parentChannel, HttpVersion protocol) {
-        try {
-            var maxStreams = parentChannel.attr(MAX_CONCURRENT_STREAMS).get();
-            var multiplexedChannel = new MultiplexedChannelState(parentChannel, maxStreams.intValue());
-            parentChannel.attr(MULTIPLEXED_CHANNEL).set(multiplexedChannel);
-
-            var streamPromise = parentChannel.eventLoop().<Channel>newPromise();
-
-            if (!acquireStreamOnInitializedConnection(multiplexedChannel, streamPromise)) {
-                failAndCloseParent(promise,
-                        parentChannel,
-                        new TransportException("Connection was closed while creating a new stream."));
-                return;
-            }
-
-            streamPromise.addListener(f -> {
-                if (!streamPromise.isSuccess()) {
-                    promise.setFailure(streamPromise.cause());
-                    return;
-                }
-
-                var stream = streamPromise.getNow();
-                // Before we cache the connection, make sure that exceptions on the connection will remove it from the cache.
-                parentChannel.pipeline().addLast(ReleaseOnExceptionHandler.getInstance());
-                cacheConnection(stream, multiplexedChannel, promise);
-            });
-        } catch (Throwable e) {
-            failAndCloseParent(promise, parentChannel, e);
-        }
-    }
-
-    private boolean acquireStreamOnInitializedConnection(
-            MultiplexedChannelState multiplexedChannel,
-            Promise<Channel> promise
-    ) {
-        var acquirePromise = multiplexedChannel.getConnection().eventLoop().<Channel>newPromise();
-        if (!multiplexedChannel.tryAcquire(acquirePromise)) {
-            return false;
-        }
-        acquirePromise.addListener(future -> {
-            if (!future.isSuccess()) {
-                promise.setFailure(future.cause());
-                return;
-            }
-            Channel stream = (Channel) future.getNow();
-            stream.attr(HTTP2_MULTIPLEXED_CONNECTION_POOL).set(this);
-            stream.attr(CHANNEL_POOL).set(this);
-            stream.attr(MULTIPLEXED_CHANNEL).set(multiplexedChannel);
-            tryExpandConnectionWindow(stream.parent());
-            promise.setSuccess(stream);
-        });
-        return true;
-    }
-
-    private void failAndCloseParent(Promise<Channel> promise, Channel parentChannel, Throwable throwable) {
-        LOGGER.warn(parentChannel, "Channel acquiring failed, closing connection", throwable);
+    /**
+     * Fails the promise using the given exception and then closes and releases the parent channel.
+     */
+    private void failPromiseAndCloseParent(Promise<Channel> promise, Throwable throwable, Channel parentChannel) {
+        LOGGER.warn(parentChannel, "Channel acquisition failed, closing connection", throwable);
+        closeAndReleaseParent(parentChannel, null);
         promise.setFailure(throwable);
-        closeAndReleaseParent(parentChannel);
-    }
-
-    private void cacheConnection(
-            Channel stream,
-            MultiplexedChannelState multiplexedChannel,
-            Promise<Channel> promise
-    ) {
-        var parentChannel = stream.parent();
-
-        channels.add(multiplexedChannel);
-
-        if (closed.get()) {
-            // We were closed while we were setting up. Make sure everything here is cleaned up properly.
-            var exception = new TransportException("Connection pool was closed while creating a new stream.");
-            failAndCloseParent(promise,
-                    parentChannel,
-                    exception);
-            return;
-        }
-        promise.setSuccess(stream);
-    }
-
-    private Future<Void> closeAndReleaseParent(Channel parentChannel) {
-        return closeAndReleaseParent(parentChannel, null, parentChannel.eventLoop().newPromise());
-    }
-
-    public Future<Void> closeAndReleaseParent(Channel parentChannel, Throwable cause) {
-        return closeAndReleaseParent(parentChannel, cause, parentChannel.eventLoop().newPromise());
-    }
-
-    private Future<Void> closeAndReleaseParent(Channel parentChannel, Throwable cause, Promise<Void> resultPromise) {
-        if (parentChannel.parent() != null) {
-            // This isn't a parent channel. Notify that something is wrong.
-            var message = "Channel (" + parentChannel + ") is not a parent channel. It will be closed, "
-                    + "but cannot be released within this pool.";
-            var exception = new TransportException(message, cause);
-            LOGGER.warn(parentChannel, message, cause);
-            parentChannel.close();
-            return resultPromise.setFailure(exception);
-        }
-
-        var multiplexedChannel = parentChannel.attr(MULTIPLEXED_CHANNEL).get();
-
-        // We may not have a multiplexed channel if the parent channel hasn't been fully initialized.
-        if (multiplexedChannel != null) {
-            multiplexedChannel.closeStreams(cause);
-            channels.remove(multiplexedChannel);
-        }
-        parentChannel.close();
-        if (parentChannel.attr(RELEASED).getAndSet(Boolean.TRUE) == null) {
-            return channelPool.release(parentChannel, resultPromise);
-        }
-        return resultPromise.setSuccess(null);
     }
 
     /**
-     * This can be called to request the expansion of the window size published by this endpoint.
+     * Caches the multiplexed channel, it can be used to open other streams, up to the configured max concurrent streams
+     * value. If the pool is still open, then it succeeds the promise with the given stream. It fails the promise if the
+     * pool was closed in the mean time.
      */
-    private void tryExpandConnectionWindow(Channel parentChannel) {
-        var task = new AbstractChannelHoldingTask(parentChannel) {
-            @Override
-            public void run() {
-                var http2Connection = this.channel.attr(HTTP2_CONNECTION).get();
-                var initialWindowSize = this.channel.attr(HTTP2_INITIAL_WINDOW_SIZE).get();
-                var connectionStream = http2Connection.connectionStream();
-                LOGGER.debug(this.channel, "Expanding connection window of size {}", initialWindowSize);
-                try {
-                    var localFlowController = http2Connection.local().flowController();
-                    localFlowController.incrementWindowSize(connectionStream, initialWindowSize);
-                } catch (Http2Exception e) {
-                    LOGGER.warn(this.channel, "Failed to expand window of size {}", initialWindowSize, e);
-                }
+    private void cacheMultiplexedChannel(
+            Promise<Channel> promise,
+            Channel stream,
+            MultiplexedChannel multiplexedChannel
+    ) {
+        if (closed.get()) {
+            // We were closed while setting up the stream. Clean up and fail the promise.
+            var exception = new TransportException("Connection pool was closed while creating a new stream.");
+            failPromiseAndCloseParent(promise, exception, multiplexedChannel.parentChannel());
+            return;
+        }
+        channels.add(multiplexedChannel);
+        promise.setSuccess(stream);
+    }
+
+    /**
+     * Handles when a new channel is acquired. If the operation completes successfully then a promise to create a
+     * new H2 stream from the channel will be created. The initialization of the new stream will be handled by
+     * {@link InitializeStreamListener}. After that it will be finalized by the {@link FinalizeStream} handler.
+     * If any failure is found in between, the resulting promise will be failed and the parent channel closed and
+     * released.
+     */
+    static class NewParentAcquiredListener implements GenericFutureListener<Future<? super Channel>> {
+        private final Promise<Channel> resultPromise;
+        private final Http2MultiplexedConnectionPool connectionPool;
+
+        NewParentAcquiredListener(
+                Promise<Channel> resultPromise,
+                Http2MultiplexedConnectionPool connectionPool
+        ) {
+            this.resultPromise = resultPromise;
+            this.connectionPool = connectionPool;
+        }
+
+        @Override
+        public void operationComplete(Future<? super Channel> parentFuture) {
+            if (!parentFuture.isSuccess()) {
+                resultPromise.setFailure(parentFuture.cause());
+                return;
             }
-        };
-        parentChannel.eventLoop().execute(task);
+            var parentChannel = (Channel) parentFuture.getNow();
+
+            // The future is completed by the handler for the H2 settings frame.
+            // We block here until completed.
+            var throwableRef = new AtomicReference<Throwable>();
+            var httpVersion = parentChannel.attr(HTTP_VERSION_FUTURE)
+                    .get()
+                    .handle(new HttpVersionHandler(throwableRef))
+                    .join();
+            if (httpVersion == null) {
+                var throwable = throwableRef.get();
+                failAndClose(parentChannel, throwable);
+                return;
+            }
+            if (httpVersion != HttpVersion.HTTP_2) {
+                failAndClose(parentChannel,
+                        new TransportException("Unsupported HTTP version: " + httpVersion + "."));
+                return;
+            }
+            parentChannel.attr(HTTP2_MULTIPLEXED_CONNECTION_POOL).set(this.connectionPool);
+            acquireStream(parentChannel);
+        }
+
+        private void acquireStream(Channel parentChannel) {
+            var maxStreams = parentChannel.attr(MAX_CONCURRENT_STREAMS).get();
+            var multiplexedChannel = connectionPool.createMultiplexedChannel(parentChannel, maxStreams.intValue());
+            parentChannel.attr(MULTIPLEXED_CHANNEL).set(multiplexedChannel);
+            var streamPromise = connectionPool.<Channel>newPromise();
+
+            if (tryAcquireOnMultiplexedChannel(multiplexedChannel, streamPromise)) {
+                streamPromise.addListener(new FinalizeStream(resultPromise,
+                        connectionPool,
+                        multiplexedChannel,
+                        parentChannel));
+            } else {
+                failAndClose(parentChannel,
+                        new TransportException("Connection was closed while creating a new stream."));
+            }
+        }
+
+        private boolean tryAcquireOnMultiplexedChannel(
+                MultiplexedChannel multiplexedChannel,
+                Promise<Channel> streamPromise
+        ) {
+            var acquirePromise = connectionPool.<Channel>newPromise();
+            if (!multiplexedChannel.tryAcquire(acquirePromise)) {
+                return false;
+            }
+            var parentChannel = multiplexedChannel.parentChannel();
+            acquirePromise.addListener(new InitializeStreamListener(streamPromise, connectionPool, parentChannel));
+            return true;
+        }
+
+        private void failAndClose(Channel parentChannel, Throwable throwable) {
+            connectionPool.failPromiseAndCloseParent(resultPromise, throwable, parentChannel);
+        }
+    }
+
+    static class HttpVersionHandler implements BiFunction<HttpVersion, Throwable, HttpVersion> {
+        private final AtomicReference<Throwable> throwableRef;
+
+        HttpVersionHandler(AtomicReference<Throwable> throwableRef) {
+            this.throwableRef = throwableRef;
+        }
+
+        @Override
+        public HttpVersion apply(HttpVersion httpVersion, Throwable throwable) {
+            if (throwable != null) {
+                throwableRef.set(throwable);
+                return null;
+            }
+            return httpVersion;
+        }
+    }
+
+    /**
+     * After acquiring a new stream, if successful, sets the expected attributes on it, and, enqueues a
+     * window size increment to match the configured settings. Completes the given promise when done.
+     */
+    static class InitializeStreamListener implements GenericFutureListener<Future<? super Channel>> {
+        private final Promise<Channel> resultPromise;
+        private final Http2MultiplexedConnectionPool connectionPool;
+        private final Channel parentChannel;
+
+        InitializeStreamListener(
+                Promise<Channel> resultPromise,
+                Http2MultiplexedConnectionPool connectionPool,
+                Channel parentChannel
+        ) {
+            this.resultPromise = resultPromise;
+            this.parentChannel = parentChannel;
+            this.connectionPool = connectionPool;
+        }
+
+        @Override
+        public void operationComplete(Future<? super Channel> streamFuture) {
+            if (!streamFuture.isSuccess()) {
+                failAndClose(parentChannel, streamFuture.cause());
+                return;
+            }
+            Channel stream = (Channel) streamFuture.getNow();
+            stream.attr(CHANNEL_POOL).set(connectionPool);
+            tryExpandConnectionWindow(stream.parent());
+            resultPromise.setSuccess(stream);
+        }
+
+        private void failAndClose(Channel parentChannel, Throwable throwable) {
+            connectionPool.failPromiseAndCloseParent(resultPromise, throwable, parentChannel);
+        }
+    }
+
+    /**
+     * Last step in the process of acquiring a new stream.
+     */
+    static class FinalizeStream implements GenericFutureListener<Future<? super Channel>> {
+        private final Promise<Channel> resultPromise;
+        private final Http2MultiplexedConnectionPool connectionPool;
+        private final MultiplexedChannel multiplexedChannel;
+        private final Channel parentChannel;
+
+        FinalizeStream(
+                Promise<Channel> resultPromise,
+                Http2MultiplexedConnectionPool connectionPool,
+                MultiplexedChannel multiplexedChannel,
+                Channel parentChannel
+        ) {
+            this.resultPromise = resultPromise;
+            this.connectionPool = connectionPool;
+            this.multiplexedChannel = multiplexedChannel;
+            this.parentChannel = parentChannel;
+        }
+
+        @Override
+        public void operationComplete(Future<? super Channel> streamFuture) {
+            if (!streamFuture.isSuccess()) {
+                failAndClose(parentChannel, streamFuture.cause());
+                return;
+            }
+            var stream = (Channel) streamFuture.getNow();
+            // Make sure that exceptions on the connection will remove it from the cache.
+            parentChannel.pipeline().addLast(ReleaseOnExceptionHandler.getInstance());
+            connectionPool.cacheMultiplexedChannel(resultPromise, stream, multiplexedChannel);
+        }
+
+        private void failAndClose(Channel parentChannel, Throwable throwable) {
+            connectionPool.failPromiseAndCloseParent(resultPromise, throwable, parentChannel);
+        }
+    }
+
+    /**
+     * Releases the semaphore used to synchronize the creation of new parent channels.
+     */
+    static class ReleaseSemaphoreWhenDone implements GenericFutureListener<Future<? super Channel>> {
+        private final Semaphore semaphore;
+
+        ReleaseSemaphoreWhenDone(Semaphore semaphore) {
+            this.semaphore = semaphore;
+        }
+
+        @Override
+        public void operationComplete(Future<? super Channel> future) {
+            semaphore.release();
+        }
+    }
+
+    /**
+     * Attach the connection pool attribute. This is used to identify the connection pool to which
+     * the channel should be released to when closed.
+     */
+    static class AddConnectionPoolAttribute implements GenericFutureListener<Future<? super Channel>> {
+        private final Http2MultiplexedConnectionPool connectionPool;
+
+        AddConnectionPoolAttribute(Http2MultiplexedConnectionPool connectionPool) {
+            this.connectionPool = connectionPool;
+        }
+
+        public void operationComplete(Future<? super Channel> streamFuture) {
+            if (streamFuture.isSuccess()) {
+                var stream = (Channel) streamFuture.getNow();
+                stream.attr(CHANNEL_POOL).set(connectionPool);
+            }
+        }
     }
 }

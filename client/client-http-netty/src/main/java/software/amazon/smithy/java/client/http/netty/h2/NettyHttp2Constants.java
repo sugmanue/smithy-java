@@ -21,12 +21,7 @@ final class NettyHttp2Constants {
     public static final String HTTP2_MULTIPLEX = "smithy.netty.http2-multiplexer";
     public static final String HTTP2_SETTINGS = "smithy.netty.http2-settings";
     public static final String HTTP2_ACK_SETTINGS = "smithy.netty.http2-ack-settings";
-
-    // Channel attributes
-    static final AttributeKey<CompletableFuture<HttpVersion>> HTTP_VERSION_FUTURE =
-            AttributeKey.valueOf("smithy.netty.http-version");
-    static final AttributeKey<Long> MAX_CONCURRENT_STREAMS =
-            AttributeKey.valueOf("smithy.netty.max-concurrent-streams");
+    // FIXME, clearly define whether this attribute is set on the parent or in the child
     public static final AttributeKey<Http2MultiplexedConnectionPool> HTTP2_MULTIPLEXED_CONNECTION_POOL =
             AttributeKey.valueOf("smithy.netty.http2-multiplexed-connection-pool");
     public static final AttributeKey<ChannelPool> CHANNEL_POOL =
@@ -35,8 +30,13 @@ final class NettyHttp2Constants {
             AttributeKey.valueOf("smithy.netty.http2-initial-window-size");
     public static final AttributeKey<Http2Connection> HTTP2_CONNECTION =
             AttributeKey.valueOf("smithy.netty.http2-connection");
-    public static final AttributeKey<MultiplexedChannelState> MULTIPLEXED_CHANNEL = AttributeKey.valueOf(
+    public static final AttributeKey<MultiplexedChannel> MULTIPLEXED_CHANNEL = AttributeKey.valueOf(
             "smithy.netty.multiplexed-channel");
+    // Channel attributes
+    static final AttributeKey<CompletableFuture<HttpVersion>> HTTP_VERSION_FUTURE =
+            AttributeKey.valueOf("smithy.netty.http-version");
+    static final AttributeKey<Long> MAX_CONCURRENT_STREAMS =
+            AttributeKey.valueOf("smithy.netty.max-concurrent-streams");
 
     private NettyHttp2Constants() {}
 }

@@ -22,7 +22,7 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.ssl.SupportedCipherSuiteFilter;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import io.netty.util.concurrent.Promise;
+import io.netty.util.concurrent.Future;
 import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -38,6 +38,9 @@ import software.amazon.smithy.java.client.http.netty.h2.NettyHttp2Utils;
 import software.amazon.smithy.java.http.api.HttpVersion;
 import software.amazon.smithy.java.logging.InternalLogger;
 
+/**
+ * Provides access to a channel promises for a given URI.
+ */
 final class ChannelPoolMap implements Closeable {
     private static final InternalLogger LOGGER = InternalLogger.getLogger(ChannelPoolMap.class);
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -46,36 +49,56 @@ final class ChannelPoolMap implements Closeable {
     private final Bootstrap baseBootstrap;
     private final EventLoopGroup eventLoopGroup;
 
-    public ChannelPoolMap(NettyHttpClientTransport.Configuration config) {
+    ChannelPoolMap(NettyHttpClientTransport.Configuration config) {
         this.config = config;
         this.eventLoopGroup = createEventLoopGroup(config);
         this.baseBootstrap = createBaseBootstrap(this.eventLoopGroup, this.config);
     }
 
-    public ChannelPool channelPool(URI uri) {
-        if (closed.get()) {
-            throw new IllegalStateException("closed");
-        }
-        Objects.requireNonNull(uri, "uri");
-        return uriToChannelPool.computeIfAbsent(uri, this::newChannelPool);
+    private static Bootstrap createBaseBootstrap(
+            EventLoopGroup eventLoopGroup,
+            NettyHttpClientTransport.Configuration config
+    ) {
+        var bootstrap = new Bootstrap();
+        bootstrap.group(eventLoopGroup);
+        bootstrap.channel(getChannelClass(config));
+        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, fromLong(config.connectTimeout().toMillis()));
+        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
+        bootstrap.option(ChannelOption.TCP_NODELAY, true);
+        bootstrap.option(ChannelOption.AUTO_READ, false);
+        return bootstrap;
     }
 
-    public <T> Promise<T> newPromise() {
-        return eventLoopGroup.next().newPromise();
+    static EventLoopGroup createEventLoopGroup(NettyHttpClientTransport.Configuration configuration) {
+        ThreadFactory threadFactory = new DefaultThreadFactory("smithy-java-netty", true);
+        return new MultiThreadIoEventLoopGroup(configuration.eventLoopGroupThreads(),
+                threadFactory,
+                NioIoHandler.newFactory());
     }
 
-    private ChannelPool newChannelPool(URI uri) {
-        var bootstrap = baseBootstrap.clone();
-        bootstrap.remoteAddress(InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort()));
-        var channelPoolRef = new AtomicReference<ChannelPool>();
-        SslContext sslContext = null;
-        if (isHttps(uri)) {
-            sslContext = createSslContext();
+    static Class<? extends Channel> getChannelClass(NettyHttpClientTransport.Configuration configuration) {
+        return NioSocketChannel.class;
+    }
+
+    static int fromLong(long i) {
+        if (i > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
         }
-        var initializer = new ChannelPipelineInitializer(config, uri, sslContext, channelPoolRef);
-        var pool = createChannelPool(bootstrap, initializer);
-        channelPoolRef.set(pool);
-        return pool;
+        if (i < Integer.MIN_VALUE) {
+            return Integer.MIN_VALUE;
+        }
+        return (int) i;
+    }
+
+    /**
+     * Acquires a channel from a connection pool for the given URI.
+     *
+     * @param uri The uri from the channel
+     * @return A future that will get notified whether the acquisition was successful.
+     */
+    public Future<Channel> acquire(URI uri) {
+        var channelPool = channelPool(uri);
+        return channelPool.acquire();
     }
 
     @Override
@@ -95,6 +118,28 @@ final class ChannelPoolMap implements Closeable {
         eventLoopGroup.shutdownGracefully();
     }
 
+    private ChannelPool channelPool(URI uri) {
+        if (closed.get()) {
+            throw new IllegalStateException("closed");
+        }
+        Objects.requireNonNull(uri, "uri");
+        return uriToChannelPool.computeIfAbsent(uri, this::newChannelPool);
+    }
+
+    private ChannelPool newChannelPool(URI uri) {
+        var bootstrap = baseBootstrap.clone();
+        bootstrap.remoteAddress(InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort()));
+        var channelPoolRef = new AtomicReference<ChannelPool>();
+        SslContext sslContext = null;
+        if (isHttps(uri)) {
+            sslContext = createSslContext();
+        }
+        var initializer = new ChannelPipelineInitializer(config, uri, sslContext, channelPoolRef);
+        var pool = createChannelPool(bootstrap, initializer);
+        channelPoolRef.set(pool);
+        return pool;
+    }
+
     private ChannelPool createChannelPool(Bootstrap bootstrap, ChannelPipelineInitializer initializer) {
         var basePool = new SimpleChannelPool(bootstrap, initializer);
         if (config.httpVersion() == HttpVersion.HTTP_2) {
@@ -105,20 +150,6 @@ final class ChannelPoolMap implements Closeable {
 
     private boolean isHttps(URI uri) {
         return uri.getScheme().equalsIgnoreCase("https");
-    }
-
-    private static Bootstrap createBaseBootstrap(
-            EventLoopGroup eventLoopGroup,
-            NettyHttpClientTransport.Configuration config
-    ) {
-        var bootstrap = new Bootstrap();
-        bootstrap.group(eventLoopGroup);
-        bootstrap.channel(getChannelClass(config));
-        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, fromLong(config.connectTimeout().toMillis()));
-        bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
-        bootstrap.option(ChannelOption.TCP_NODELAY, true);
-        bootstrap.option(ChannelOption.AUTO_READ, false);
-        return bootstrap;
     }
 
     private SslContext createSslContext() throws TlsException {
@@ -158,26 +189,5 @@ final class ChannelPoolMap implements Closeable {
                         ApplicationProtocolNames.HTTP_2));
         config.sslContextModifier().accept(builder);
         return builder;
-    }
-
-    static EventLoopGroup createEventLoopGroup(NettyHttpClientTransport.Configuration configuration) {
-        ThreadFactory threadFactory = new DefaultThreadFactory("smithy-java-netty", true);
-        return new MultiThreadIoEventLoopGroup(configuration.eventLoopGroupThreads(),
-                threadFactory,
-                NioIoHandler.newFactory());
-    }
-
-    static Class<? extends Channel> getChannelClass(NettyHttpClientTransport.Configuration configuration) {
-        return NioSocketChannel.class;
-    }
-
-    static int fromLong(long i) {
-        if (i > Integer.MAX_VALUE) {
-            return Integer.MAX_VALUE;
-        }
-        if (i < Integer.MIN_VALUE) {
-            return Integer.MIN_VALUE;
-        }
-        return (int) i;
     }
 }
