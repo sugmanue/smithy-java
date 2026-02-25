@@ -18,7 +18,7 @@ import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamReader;
-import software.amazon.smithy.java.core.serde.event.InternalEventStreamReader;
+import software.amazon.smithy.java.core.serde.event.ProtocolEventStreamReader;
 import software.amazon.smithy.java.http.api.HttpHeaders;
 import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.java.io.uri.QueryStringParser;
@@ -115,7 +115,7 @@ final class HttpBindingDeserializer extends SpecificShapeDeserializer implements
                         structMemberConsumer.accept(state, member, new SpecificShapeDeserializer() {
                             @Override
                             public EventStreamReader<? extends SerializableStruct> readEventStream(Schema schema) {
-                                return InternalEventStreamReader.newReader(body, eventDecoderFactory, false);
+                                return ProtocolEventStreamReader.newReader(body, eventDecoderFactory, false);
                             }
                         });
                     } else if (member.hasTrait(TraitKey.STREAMING_TRAIT)) {

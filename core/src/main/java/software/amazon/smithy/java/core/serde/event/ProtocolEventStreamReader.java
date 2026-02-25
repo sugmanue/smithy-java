@@ -17,7 +17,7 @@ import software.amazon.smithy.java.io.datastream.DataStream;
  * @param <IE> The type of the initial event
  * @param <T>  the type of the event
  */
-public sealed interface InternalEventStreamReader<IE extends SerializableStruct, T extends SerializableStruct>
+public sealed interface ProtocolEventStreamReader<IE extends SerializableStruct, T extends SerializableStruct>
         extends EventStreamReader<T> permits DefaultEventStreamReader {
     /**
      * Reads the initial response from the event stream.
@@ -41,7 +41,7 @@ public sealed interface InternalEventStreamReader<IE extends SerializableStruct,
      * @param <F>                  The type of the frame
      * @return The new reader
      */
-    static <IE extends SerializableStruct, T extends SerializableStruct, F extends Frame<?>> InternalEventStreamReader<
+    static <IE extends SerializableStruct, T extends SerializableStruct, F extends Frame<?>> ProtocolEventStreamReader<
             IE, T> newReader(
                     DataStream dataStream,
                     EventDecoderFactory<F> eventDecoderFactory,

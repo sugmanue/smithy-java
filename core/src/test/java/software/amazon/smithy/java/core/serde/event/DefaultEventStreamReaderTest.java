@@ -52,17 +52,7 @@ class DefaultEventStreamReaderTest {
             TestMessage.TestFrame> createWriter() {
         var writer = new DefaultEventStreamWriter<TestMessage.TestEvent, TestMessage.TestEvent,
                 TestMessage.TestFrame>();
-        writer.bootstrap(new InternalEventStreamWriter.Bootstrap<>() {
-            @Override
-            public EventEncoderFactory<TestMessage.TestFrame> encoder() {
-                return new TestMessage.TestEventEncoderFactory();
-            }
-
-            @Override
-            public TestMessage.TestEvent initialEvent() {
-                return null;
-            }
-        });
+        writer.bootstrap(new TestMessage.TestEventEncoderFactory(), null);
         return writer;
     }
 }

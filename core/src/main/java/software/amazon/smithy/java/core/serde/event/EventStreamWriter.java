@@ -13,7 +13,7 @@ import software.amazon.smithy.java.core.schema.SerializableStruct;
  * @param <T> The type of the event stream.
  */
 public sealed interface EventStreamWriter<T extends SerializableStruct> extends AutoCloseable, EventStream<T>
-        permits InternalEventStreamWriter {
+        permits ProtocolEventStreamWriter {
 
     /**
      * Writes the given event to the event stream. This method will block until the write is possible.

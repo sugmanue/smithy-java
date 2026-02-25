@@ -27,7 +27,7 @@ import software.amazon.smithy.java.logging.InternalLogger;
  */
 final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends SerializableStruct,
         F extends Frame<?>>
-        implements InternalEventStreamWriter<T, IE, F> {
+        implements ProtocolEventStreamWriter<T, IE, F> {
     private static final InternalLogger LOGGER = InternalLogger.getLogger(DefaultEventStreamWriter.class);
     /**
      * This latch is used to ensure that the protocol handler writes the initial event
@@ -79,13 +79,13 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
     }
 
     @Override
-    public void bootstrap(Bootstrap<IE, F> bootstrap) {
+    public void bootstrap(EventEncoderFactory<F> encoderFactory, IE initialEvent) {
         // Make sure that the protocol handler doesn't call bootstrap twice.
         if (readyLatch.getCount() == 0) {
             throw new IllegalStateException("bootstrap has been already called");
         }
-        setEventStreamEncodingFactory(bootstrap.encoder());
-        writeInitialEvent(bootstrap.initialEvent());
+        setEventStreamEncodingFactory(Objects.requireNonNull(encoderFactory, "encoderFactory"));
+        writeInitialEvent(initialEvent);
     }
 
     /**

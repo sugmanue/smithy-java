@@ -17,7 +17,7 @@ import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.Frame;
-import software.amazon.smithy.java.core.serde.event.InternalEventStreamWriter;
+import software.amazon.smithy.java.core.serde.event.ProtocolEventStreamWriter;
 import software.amazon.smithy.java.http.api.HttpRequest;
 import software.amazon.smithy.java.io.uri.URIBuilder;
 
@@ -167,21 +167,9 @@ public final class RequestSerializer {
 
         var eventStream = serializer.getEventStream();
         if (eventStream != null && operation instanceof InputEventStreamingApiOperation<?, ?, ?>) {
-            InternalEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
-                    InternalEventStreamWriter.toInternal(eventStream);
-
-            writer.bootstrap(new InternalEventStreamWriter.Bootstrap<>() {
-                @Override
-                @SuppressWarnings("unchecked")
-                public EventEncoderFactory<Frame<?>> encoder() {
-                    return (EventEncoderFactory) eventStreamEncodingFactory;
-                }
-
-                @Override
-                public SerializableStruct initialEvent() {
-                    return null;
-                }
-            });
+            ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
+                    ProtocolEventStreamWriter.toInternal(eventStream);
+            writer.bootstrap((EventEncoderFactory) eventStreamEncodingFactory, null);
             builder.body(writer.toDataStream());
             serializer.setContentType(eventStreamEncodingFactory.contentType());
         } else if (serializer.hasBody()) {

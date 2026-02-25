@@ -15,7 +15,7 @@ import software.amazon.smithy.java.core.schema.SerializableStruct;
  * @param <T> The type of the event stream.
  */
 public sealed interface EventStreamReader<T extends SerializableStruct>
-        extends Iterable<T>, AutoCloseable, EventStream<T> permits InternalEventStreamReader {
+        extends Iterable<T>, AutoCloseable, EventStream<T> permits ProtocolEventStreamReader {
 
     /**
      * Reads an event from the event stream.

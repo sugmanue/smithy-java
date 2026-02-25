@@ -11,8 +11,8 @@ import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStream;
-import software.amazon.smithy.java.core.serde.event.InternalEventStreamReader;
-import software.amazon.smithy.java.core.serde.event.InternalEventStreamWriter;
+import software.amazon.smithy.java.core.serde.event.ProtocolEventStreamReader;
+import software.amazon.smithy.java.core.serde.event.ProtocolEventStreamWriter;
 import software.amazon.smithy.java.io.datastream.DataStream;
 
 /**
@@ -28,19 +28,9 @@ public final class RpcEventStreamsUtil {
             SerializableStruct input
     ) {
         EventStream<SerializableStruct> eventStream = input.getMemberValue(streamingMember(input.schema()));
-        InternalEventStreamWriter<SerializableStruct, SerializableStruct, AwsEventFrame> writer =
-                InternalEventStreamWriter.toInternal(eventStream);
-        writer.bootstrap(new InternalEventStreamWriter.Bootstrap<>() {
-            @Override
-            public EventEncoderFactory<AwsEventFrame> encoder() {
-                return eventStreamEncodingFactory;
-            }
-
-            @Override
-            public SerializableStruct initialEvent() {
-                return input;
-            }
-        });
+        ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, AwsEventFrame> writer =
+                ProtocolEventStreamWriter.toInternal(eventStream);
+        writer.bootstrap(eventStreamEncodingFactory, input);
         return writer.toDataStream();
     }
 
@@ -48,7 +38,7 @@ public final class RpcEventStreamsUtil {
             EventDecoderFactory<AwsEventFrame> eventDecoderFactory,
             DataStream bodyDataStream
     ) {
-        var reader = InternalEventStreamReader.<O, SerializableStruct, AwsEventFrame>newReader(bodyDataStream,
+        var reader = ProtocolEventStreamReader.<O, SerializableStruct, AwsEventFrame>newReader(bodyDataStream,
                 eventDecoderFactory,
                 true);
         return reader.readInitialEvent();

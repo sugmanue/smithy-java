@@ -17,7 +17,7 @@ import software.amazon.smithy.java.io.datastream.DataStream;
  * @param <T>  The event type
  * @param <IE> The initial event type
  */
-public sealed interface InternalEventStreamWriter<T extends SerializableStruct, IE extends SerializableStruct,
+public sealed interface ProtocolEventStreamWriter<T extends SerializableStruct, IE extends SerializableStruct,
         F extends Frame<?>> extends EventStreamWriter<T> permits DefaultEventStreamWriter {
     /**
      * Converts to the writer to a DataStream. This method will be called
@@ -36,38 +36,13 @@ public sealed interface InternalEventStreamWriter<T extends SerializableStruct, 
      * <p>This method will be called using a proper data by the protocol serializer.
      * Writes will be blocked until this method is called.
      *
-     * @param bootstrap The sink to write events to
+     * @param encoderFactory the event encoder factory to serialize events and encode to frames.
+     * @param initialEvent the initial event, can be null if the protocol does not send the initial event in the stream
      */
-    void bootstrap(Bootstrap<IE, F> bootstrap);
+    void bootstrap(EventEncoderFactory<F> encoderFactory, IE initialEvent);
 
     /**
-     * Contains the protocol dependant encoder factory and the initial event needed to bootstrap the writer.
-     * Protocols that do not require an initial event to be sent as part of the stream must return null
-     * in the {@link #initialEvent()} method.
-     *
-     * @param <IE> the initial event type
-     * @param <F>  the frame type
-     */
-    interface Bootstrap<IE extends SerializableStruct, F extends Frame<?>> {
-        /**
-         * Returns the event encoder factory to serialize events and encode to frames.
-         *
-         * @return the event encoder factory to serialize events and encode to frames.
-         */
-        EventEncoderFactory<F> encoder();
-
-        /**
-         * Returns the initial event of the event stream. This method must return
-         * {@code null} if the implementing protocol does not require the initial
-         * event to be encoded as an event.
-         *
-         * @return the initial event of the event stream.
-         */
-        IE initialEvent();
-    }
-
-    /**
-     * Utility method to convert a {@link EventStreamWriter} to a {@link InternalEventStreamWriter}.
+     * Utility method to convert a {@link EventStreamWriter} to a {@link ProtocolEventStreamWriter}.
      *
      * @param <T>  the type of the event
      * @param <IE> the type of the internal event
@@ -76,12 +51,12 @@ public sealed interface InternalEventStreamWriter<T extends SerializableStruct, 
      */
     @SuppressWarnings("unchecked")
     static <T extends SerializableStruct, IE extends SerializableStruct,
-            F extends Frame<?>> InternalEventStreamWriter<T, IE, F> toInternal(
+            F extends Frame<?>> ProtocolEventStreamWriter<T, IE, F> toInternal(
                     EventStream<? extends SerializableStruct> writer
             ) {
-        if (!(writer instanceof InternalEventStreamWriter)) {
+        if (!(writer instanceof ProtocolEventStreamWriter)) {
             throw new IllegalArgumentException("writer must be an instance of InternalEventStreamWriter");
         }
-        return (InternalEventStreamWriter<T, IE, F>) writer;
+        return (ProtocolEventStreamWriter<T, IE, F>) writer;
     }
 }

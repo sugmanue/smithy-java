@@ -18,7 +18,7 @@ import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.java.logging.InternalLogger;
 
 /**
- * Implementation of {@link InternalEventStreamReader} that reads from
+ * Implementation of {@link ProtocolEventStreamReader} that reads from
  * an InputStream and decodes frames into events of type T. This class extends
  * {@link EventStreamReader} which is be the user facing aspect of it, and
  * adds an {@link #readInitialEvent} method for protocol implementations to be
@@ -41,7 +41,7 @@ import software.amazon.smithy.java.logging.InternalLogger;
  * @param <F>  the frame type
  */
 final class DefaultEventStreamReader<IE extends SerializableStruct, T extends SerializableStruct, F extends Frame<?>>
-        implements InternalEventStreamReader<IE, T> {
+        implements ProtocolEventStreamReader<IE, T> {
 
     private static final InternalLogger LOGGER = InternalLogger.getLogger(DefaultEventStreamReader.class);
     private static final int DEFAULT_BUFFER_SIZE = 8192;
