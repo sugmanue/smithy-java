@@ -137,9 +137,7 @@ final class DefaultEventStreamReader<IE extends SerializableStruct, T extends Se
                 int read = inputStream.read(buffer);
 
                 if (read == -1) {
-                    var error = new IOException("Unexpected end of stream while reading initial event");
-                    closeWithError(error);
-                    throw error;
+                    throw new IOException("Unexpected end of stream while reading initial event");
                 }
 
                 LOGGER.debug("Read {} bytes for initial event", read);

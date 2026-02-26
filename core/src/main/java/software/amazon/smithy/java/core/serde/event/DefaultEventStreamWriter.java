@@ -34,7 +34,7 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
     /**
      * Default timeout to block waiting to write.
      */
-    private static final int WRITE_TIMEOUT_MILLIS = 1500;
+    private static final int WRITE_TIMEOUT_MILLIS = 10_000;
     /**
      * This latch is used to ensure that the protocol handler writes the initial event
      * before any other event is written. Protocols that don't require the initial event still have
