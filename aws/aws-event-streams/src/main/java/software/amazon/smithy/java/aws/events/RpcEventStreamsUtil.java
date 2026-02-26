@@ -29,7 +29,7 @@ public final class RpcEventStreamsUtil {
     ) {
         EventStream<SerializableStruct> eventStream = input.getMemberValue(streamingMember(input.schema()));
         ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, AwsEventFrame> writer =
-                ProtocolEventStreamWriter.toInternal(eventStream);
+                ProtocolEventStreamWriter.of(eventStream);
         writer.bootstrap(eventStreamEncodingFactory, input);
         return writer.toDataStream();
     }

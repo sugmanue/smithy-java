@@ -7,6 +7,8 @@ package software.amazon.smithy.java.core.serde.event;
 
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.io.datastream.DataStream;
@@ -29,6 +31,10 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
         F extends Frame<?>>
         implements ProtocolEventStreamWriter<T, IE, F> {
     private static final InternalLogger LOGGER = InternalLogger.getLogger(DefaultEventStreamWriter.class);
+    /**
+     * Default timeout to block waiting to write.
+     */
+    private static final int WRITE_TIMEOUT_MILLIS = 1500;
     /**
      * This latch is used to ensure that the protocol handler writes the initial event
      * before any other event is written. Protocols that don't require the initial event still have
@@ -68,7 +74,9 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
             LOGGER.debug("write event {}", event);
 
             // Wait for writer to be fully setup and the initial event to be written.
-            readyLatch.await();
+            if (!readyLatch.await(WRITE_TIMEOUT_MILLIS, TimeUnit.MICROSECONDS)) {
+                closeWithError(new TimeoutException("Timed out waiting for writing"));
+            }
 
             doWrite(event);
         } catch (InterruptedException e) {

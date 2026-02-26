@@ -53,7 +53,7 @@ final class DefaultEventStreamReader<IE extends SerializableStruct, T extends Se
     private final InputStream inputStream;
     private final EventDecoder<F> eventDecoder;
     private final FrameDecoder<F> frameDecoder;
-    private static final AtomicBoolean inputClosed = new AtomicBoolean(false);
+    private final AtomicBoolean inputClosed = new AtomicBoolean(false);
     private volatile State state;
 
     /**
@@ -125,7 +125,9 @@ final class DefaultEventStreamReader<IE extends SerializableStruct, T extends Se
     @SuppressWarnings("unchecked")
     public IE readInitialEvent() {
         if (state != State.READING_INITIAL_EVENT) {
-            throw new IllegalStateException("Reader is not in reading events state, current: " + state);
+            var error = new IllegalStateException("Reader is not in reading events state, current: " + state);
+            closeWithError(error);
+            throw error;
         }
 
         IE result = null;
@@ -135,8 +137,9 @@ final class DefaultEventStreamReader<IE extends SerializableStruct, T extends Se
                 int read = inputStream.read(buffer);
 
                 if (read == -1) {
-                    state = State.READING_COMPLETED;
-                    throw new RuntimeException("Unexpected end of stream while reading initial event");
+                    var error = new IOException("Unexpected end of stream while reading initial event");
+                    closeWithError(error);
+                    throw error;
                 }
 
                 LOGGER.debug("Read {} bytes for initial event", read);
@@ -192,6 +195,7 @@ final class DefaultEventStreamReader<IE extends SerializableStruct, T extends Se
     @Override
     public void close() {
         if (inputClosed.compareAndSet(false, true)) {
+            state = State.CLOSED;
             try {
                 inputStream.close();
             } catch (IOException e) {
@@ -199,7 +203,6 @@ final class DefaultEventStreamReader<IE extends SerializableStruct, T extends Se
             } finally {
                 queue.clear();
             }
-            state = State.CLOSED;
         }
     }
 

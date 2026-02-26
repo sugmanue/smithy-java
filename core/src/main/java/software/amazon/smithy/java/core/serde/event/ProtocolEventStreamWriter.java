@@ -11,7 +11,7 @@ import software.amazon.smithy.java.io.datastream.DataStream;
 /**
  * This class is used by the protocol serializers to bind the user facing {@link EventStreamWriter}
  * to the downstream {@link DataStream} that sends the bytes over the wire. The serializer
- * can safely cast the {@link EventStreamWriter} member to this class using {@link #toInternal(EventStream)}
+ * can safely cast the {@link EventStreamWriter} member to this class using {@link #of(EventStream)}
  * to access the internal methods for bootstrapping by providing the encoder and the initial event if needed.
  *
  * @param <T>  The event type
@@ -51,7 +51,7 @@ public sealed interface ProtocolEventStreamWriter<T extends SerializableStruct, 
      */
     @SuppressWarnings("unchecked")
     static <T extends SerializableStruct, IE extends SerializableStruct,
-            F extends Frame<?>> ProtocolEventStreamWriter<T, IE, F> toInternal(
+            F extends Frame<?>> ProtocolEventStreamWriter<T, IE, F> of(
                     EventStream<? extends SerializableStruct> writer
             ) {
         if (!(writer instanceof ProtocolEventStreamWriter)) {

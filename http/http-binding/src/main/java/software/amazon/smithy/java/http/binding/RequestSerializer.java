@@ -168,7 +168,7 @@ public final class RequestSerializer {
         var eventStream = serializer.getEventStream();
         if (eventStream != null && operation instanceof InputEventStreamingApiOperation<?, ?, ?>) {
             ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
-                    ProtocolEventStreamWriter.toInternal(eventStream);
+                    ProtocolEventStreamWriter.of(eventStream);
             writer.bootstrap((EventEncoderFactory) eventStreamEncodingFactory, null);
             builder.body(writer.toDataStream());
             serializer.setContentType(eventStreamEncodingFactory.contentType());
@@ -177,9 +177,5 @@ public final class RequestSerializer {
         }
 
         return builder.headers(serializer.getHeaders()).build();
-    }
-
-    private static <T> T doCast(Class<T> xclass, Object value) {
-        return xclass.cast(value);
     }
 }

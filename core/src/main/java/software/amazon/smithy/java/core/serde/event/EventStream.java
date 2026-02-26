@@ -45,11 +45,11 @@ public sealed interface EventStream<T extends SerializableStruct> extends AutoCl
     void closeWithError(Exception e);
 
     /**
-     * Creates a new writer to be used by the client to write events. This writer must
-     * be set to the event stream member of the structure and the user should keep a
-     * reference to it that can be used to write the events. The returned writer
-     * won't be fully setup until the containing structure is serialized by the protocol.
-     * Until then, attempts to use the write method will be blocked until ready.
+     * Creates a new writer to write events. This writer must be set to the event stream
+     * member of the structure and the user should keep a reference to it that can be used
+     * to write the events. The returned writer won't be fully setup until the containing
+     * structure is serialized by the protocol. Until then, attempts to use the write method
+     * will be blocked until ready.
      *
      * @param <T> The type of the event.
      * @return the new event writer.

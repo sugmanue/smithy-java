@@ -154,7 +154,7 @@ public final class ResponseSerializer {
         var eventStream = serializer.getEventStream();
         if (eventStream != null && operation instanceof OutputEventStreamingApiOperation<?, ?, ?>) {
             ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
-                    ProtocolEventStreamWriter.toInternal(eventStream);
+                    ProtocolEventStreamWriter.of(eventStream);
             writer.bootstrap(eventEncoderFactory, null);
             builder.body(writer.toDataStream());
             serializer.setContentType(eventEncoderFactory.contentType());

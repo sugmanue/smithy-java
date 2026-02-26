@@ -49,7 +49,7 @@ final class EventPipeStream extends InputStream {
      * Creates a new EventInputStream with the default queue size of 64.
      */
     public EventPipeStream() {
-        this.queue = new ArrayBlockingQueue<>(1);
+        this.queue = new ArrayBlockingQueue<>(16);
     }
 
     /**
@@ -185,6 +185,14 @@ final class EventPipeStream extends InputStream {
 
         // Drain the queue to unblock any waiting producers
         queue.clear();
+        // We add the poison pill here to make sure that
+        // any pending reads con be unblocked.
+        try {
+            queue.put(POISON_PILL);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while adding the posion pill", e);
+        }
     }
 
     /**
