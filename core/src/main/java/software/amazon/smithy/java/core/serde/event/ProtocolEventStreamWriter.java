@@ -55,7 +55,7 @@ public sealed interface ProtocolEventStreamWriter<T extends SerializableStruct, 
                     EventStream<? extends SerializableStruct> writer
             ) {
         if (!(writer instanceof ProtocolEventStreamWriter)) {
-            throw new IllegalArgumentException("writer must be an instance of InternalEventStreamWriter");
+            throw new IllegalArgumentException("writer must be an instance of ProtocolEventStreamWriter");
         }
         return (ProtocolEventStreamWriter<T, IE, F>) writer;
     }
