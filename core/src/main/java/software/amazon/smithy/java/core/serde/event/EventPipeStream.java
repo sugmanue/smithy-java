@@ -46,7 +46,7 @@ final class EventPipeStream extends InputStream {
     private volatile boolean closed = false;
 
     /**
-     * Creates a new EventInputStream with the default queue size of 64.
+     * Creates a new EventInputStream with the default queue size of 16.
      */
     public EventPipeStream() {
         this.queue = new ArrayBlockingQueue<>(16);
