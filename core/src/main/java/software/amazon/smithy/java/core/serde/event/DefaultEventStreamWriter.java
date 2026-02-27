@@ -74,8 +74,10 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
             LOGGER.debug("write event {}", event);
 
             // Wait for writer to be fully setup and the initial event to be written.
-            if (!readyLatch.await(WRITE_TIMEOUT_MILLIS, TimeUnit.MICROSECONDS)) {
-                closeWithError(new TimeoutException("Timed out waiting for writing"));
+            if (!readyLatch.await(WRITE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                var error = new TimeoutException("Timed out waiting for writing");
+                closeWithError(error);
+                throw new RuntimeException(error);
             }
 
             doWrite(event);
