@@ -8,7 +8,6 @@ package software.amazon.smithy.java.http.binding;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableShape;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
@@ -152,7 +151,7 @@ public final class ResponseSerializer {
                 .statusCode(serializer.getResponseStatus());
 
         var eventStream = serializer.getEventStream();
-        if (eventStream != null && operation instanceof OutputEventStreamingApiOperation<?, ?, ?>) {
+        if (eventStream != null && operation.outputEventBuilderSupplier() != null) {
             ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
                     ProtocolEventStreamWriter.of(eventStream);
             writer.bootstrap(eventEncoderFactory, null);

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.nio.charset.StandardCharsets;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.aws.events.model.BodyAndHeaderEvent;
@@ -143,10 +144,11 @@ class AwsEventShapeDecoderTest {
         assertEquals(expected, actual);
     }
 
+    @SuppressWarnings("unchecked")
     static AwsEventShapeDecoder<?, ?> createDecoder() {
         return new AwsEventShapeDecoder<>(InitialEventType.INITIAL_RESPONSE,
                 () -> TestOperation.instance().outputBuilder(), // output builder
-                TestOperation.instance().outputEventBuilderSupplier(),
+                (Supplier) TestOperation.instance().outputEventBuilderSupplier(),
                 TestOperation.instance().outputStreamMember(),
                 createJsonCodec());
     }

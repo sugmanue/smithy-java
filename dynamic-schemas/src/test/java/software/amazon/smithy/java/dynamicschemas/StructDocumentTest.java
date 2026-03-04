@@ -33,6 +33,9 @@ import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.document.DiscriminatorException;
 import software.amazon.smithy.java.core.serde.document.Document;
+import software.amazon.smithy.java.core.serde.event.EventStream;
+import software.amazon.smithy.java.io.datastream.DataStream;
+import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
 
@@ -368,5 +371,99 @@ public class StructDocumentTest {
 
         assertThat(set[0], equalTo(schema));
         assertThat(set[1], equalTo(schema.member("a")));
+    }
+
+    @Test
+    public void convertDocumentPassesThroughDataStream() {
+        var model = Model.assembler()
+                .addUnparsedModel("test.smithy", """
+                        $version: "2"
+                        namespace smithy.example
+
+                        structure Foo {
+                            @required
+                            body: StreamBlob
+                        }
+
+                        @streaming
+                        blob StreamBlob
+                        """)
+                .assemble()
+                .unwrap();
+        var converter = new SchemaConverter(model);
+        var schema = converter.getSchema(model.expectShape(ShapeId.from("smithy.example#Foo")));
+
+        var ds = DataStream.ofString("hello");
+        var input = Document.ofObject(Map.of("body", ds));
+        var struct = StructDocument.of(schema, input);
+
+        assertThat(struct.getMember("body").asDataStream(), is(ds));
+    }
+
+    @Test
+    public void convertDocumentPassesThroughEventStream() {
+        var model = Model.assembler()
+                .addUnparsedModel("test.smithy", """
+                        $version: "2"
+                        namespace smithy.example
+
+                        structure Foo {
+                            events: Events
+                        }
+
+                        @streaming
+                        union Events {
+                            data: Data
+                        }
+
+                        structure Data {
+                            value: String
+                        }
+                        """)
+                .assemble()
+                .unwrap();
+        var converter = new SchemaConverter(model);
+        var schema = converter.getSchema(model.expectShape(ShapeId.from("smithy.example#Foo")));
+
+        var es = EventStream.newWriter();
+        var input = Document.ofObject(Map.of("events", es));
+        var struct = StructDocument.of(schema, input);
+
+        assertThat(struct.getMember("events").asEventStream(), is(es));
+    }
+
+    @Test
+    public void dataStreamSerializesMemberCorrectly() {
+        var model = Model.assembler()
+                .addUnparsedModel("test.smithy", """
+                        $version: "2"
+                        namespace smithy.example
+
+                        structure Foo {
+                            @required
+                            body: StreamBlob
+                        }
+
+                        @streaming
+                        blob StreamBlob
+                        """)
+                .assemble()
+                .unwrap();
+        var converter = new SchemaConverter(model);
+        var schema = converter.getSchema(model.expectShape(ShapeId.from("smithy.example#Foo")));
+
+        var ds = DataStream.ofString("hello");
+        var input = Document.ofObject(Map.of("body", ds));
+        var struct = StructDocument.of(schema, input);
+
+        DataStream[] captured = new DataStream[1];
+        struct.serializeMembers(new SpecificShapeSerializer() {
+            @Override
+            public void writeDataStream(Schema s, DataStream value) {
+                captured[0] = value;
+            }
+        });
+
+        assertThat(captured[0], is(ds));
     }
 }

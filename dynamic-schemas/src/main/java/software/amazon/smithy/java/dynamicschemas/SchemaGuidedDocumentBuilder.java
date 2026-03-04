@@ -12,8 +12,11 @@ import java.util.Map;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SchemaUtils;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
+import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.document.Document;
+import software.amazon.smithy.java.core.serde.event.EventStream;
+import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
 
@@ -54,16 +57,15 @@ final class SchemaGuidedDocumentBuilder implements ShapeBuilder<StructDocument> 
     @Override
     public void setMemberValue(Schema member, Object value) {
         SchemaUtils.validateMemberInSchema(target, member, value);
-        Document convertedValue;
 
-        if (value instanceof Document d) {
+        Document convertedValue = switch (value) {
             // Convert the given document so it matches the required schema.
-            convertedValue = StructDocument.convertDocument(member, d, service);
-        } else {
+            case Document d -> StructDocument.convertDocument(member, d, service);
+            case DataStream ds -> Document.of(member, ds);
+            case EventStream<?> es -> Document.of(member, es);
             // Convert the object to a document and then wrap it with the correct schema.
-            convertedValue = Document.ofObject(value);
-            convertedValue = StructDocument.convertDocument(member, convertedValue, service);
-        }
+            case null, default -> StructDocument.convertDocument(member, Document.ofObject(value), service);
+        };
 
         map.put(member.memberName(), convertedValue);
     }
@@ -82,7 +84,12 @@ final class SchemaGuidedDocumentBuilder implements ShapeBuilder<StructDocument> 
 
     private Document deserialize(ShapeDeserializer decoder, Schema schema) {
         return switch (schema.type()) {
-            case BLOB -> new ContentDocument(Document.of(decoder.readBlob(schema)), schema);
+            case BLOB -> {
+                if (schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
+                    yield Document.of(schema, decoder.readDataStream(schema));
+                }
+                yield new ContentDocument(Document.of(decoder.readBlob(schema)), schema);
+            }
             case BOOLEAN -> new ContentDocument(Document.of(decoder.readBoolean(schema)), schema);
             case STRING, ENUM -> new ContentDocument(Document.of(decoder.readString(schema)), schema);
             case TIMESTAMP -> new ContentDocument(Document.of(decoder.readTimestamp(schema)), schema);
@@ -109,16 +116,23 @@ final class SchemaGuidedDocumentBuilder implements ShapeBuilder<StructDocument> 
                 });
                 yield new ContentDocument(Document.of(map), schema);
             }
-            case STRUCTURE, UNION -> {
-                var map = new HashMap<String, Document>();
-                decoder.readStruct(schema, map, (state, memberSchema, memberDeserializer) -> {
-                    state.put(memberSchema.memberName(), deserialize(memberDeserializer, memberSchema));
-                });
-                // Use "new" here since we know all the nested shapes have the correct schemas.
-                yield new StructDocument(schema, map, service);
+            case STRUCTURE -> createStructDocument(decoder, schema);
+            case UNION -> {
+                if (schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
+                    yield Document.of(schema, decoder.readEventStream(schema));
+                }
+                yield createStructDocument(decoder, schema);
             }
             default -> throw new UnsupportedOperationException("Unsupported target type: " + schema.type());
         };
+    }
+
+    private StructDocument createStructDocument(ShapeDeserializer decoder, Schema schema) {
+        var map = new LinkedHashMap<String, Document>();
+        decoder.readStruct(schema, map, (state, memberSchema, memberDeserializer) -> {
+            state.put(memberSchema.memberName(), deserialize(memberDeserializer, memberSchema));
+        });
+        return new StructDocument(schema, map, service);
     }
 
     @Override

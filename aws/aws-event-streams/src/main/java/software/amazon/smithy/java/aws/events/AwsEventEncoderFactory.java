@@ -7,8 +7,7 @@ package software.amazon.smithy.java.aws.events;
 
 import java.util.Objects;
 import java.util.function.Function;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
+import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
@@ -54,7 +53,7 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
      * @return A new event encoder factory
      */
     public static AwsEventEncoderFactory forInputStream(
-            InputEventStreamingApiOperation<?, ?, ?> operation,
+            ApiOperation<?, ?> operation,
             Codec codec,
             String payloadMediaType,
             FrameTransformer<AwsEventFrame> transformer,
@@ -78,7 +77,7 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
      * @return A new event encoder factory
      */
     public static AwsEventEncoderFactory forOutputStream(
-            OutputEventStreamingApiOperation<?, ?, ?> operation,
+            ApiOperation<?, ?> operation,
             Codec codec,
             String payloadMediaType,
             FrameTransformer<AwsEventFrame> transformer,

@@ -27,6 +27,8 @@ import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.core.serde.document.DocumentDeserializer;
+import software.amazon.smithy.java.core.serde.event.EventStream;
+import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.java.json.JsonCodec;
 import software.amazon.smithy.model.Model;
 import software.amazon.smithy.model.shapes.ShapeId;
@@ -428,5 +430,106 @@ public class SchemaGuidedDocumentBuilderTest {
         assertThat(result.getMemberValue(schema.member("baz")), equalTo(Map.of("foo", "bar")));
         assertThat(StructDocumentTest.getDocumentSchema(result.getMember("foo")), equalTo(schema.member("foo")));
         assertThat(StructDocumentTest.getDocumentSchema(result.getMember("baz")), equalTo(schema.member("baz")));
+    }
+
+    @Test
+    public void setMemberValueHandlesDataStream() {
+        var testModel = Model.assembler()
+                .addUnparsedModel("test.smithy", """
+                        $version: "2"
+                        namespace smithy.example
+
+                        structure TestShape {
+                            @required
+                            body: StreamBlob
+                        }
+
+                        @streaming
+                        blob StreamBlob
+                        """)
+                .assemble()
+                .unwrap();
+        var converter = new SchemaConverter(testModel);
+        var schema = converter.getSchema(testModel.expectShape(ShapeId.from("smithy.example#TestShape")));
+
+        var ds = DataStream.ofString("hello");
+        var builder = SchemaConverter.createDocumentBuilder(schema);
+        builder.setMemberValue(schema.member("body"), ds);
+
+        var result = builder.build();
+        assertThat(result.getMember("body").asDataStream(), equalTo(ds));
+    }
+
+    @Test
+    public void setMemberValueHandlesEventStream() {
+        var testModel = Model.assembler()
+                .addUnparsedModel("test.smithy", """
+                        $version: "2"
+                        namespace smithy.example
+
+                        structure TestShape {
+                            events: Events
+                        }
+
+                        @streaming
+                        union Events {
+                            data: Data
+                        }
+
+                        structure Data {
+                            value: String
+                        }
+                        """)
+                .assemble()
+                .unwrap();
+        var converter = new SchemaConverter(testModel);
+        var schema = converter.getSchema(testModel.expectShape(ShapeId.from("smithy.example#TestShape")));
+
+        var es = EventStream.newWriter();
+        var builder = SchemaConverter.createDocumentBuilder(schema);
+        builder.setMemberValue(schema.member("events"), es);
+
+        var result = builder.build();
+        assertThat(result.getMember("events").asEventStream(), equalTo(es));
+    }
+
+    @Test
+    public void deserializesDataStreamMember() {
+        var testModel = Model.assembler()
+                .addUnparsedModel("test.smithy", """
+                        $version: "2"
+                        namespace smithy.example
+
+                        structure TestShape {
+                            @required
+                            body: StreamBlob
+                        }
+
+                        @streaming
+                        blob StreamBlob
+                        """)
+                .assemble()
+                .unwrap();
+        var converter = new SchemaConverter(testModel);
+        var schema = converter.getSchema(testModel.expectShape(ShapeId.from("smithy.example#TestShape")));
+
+        var ds = DataStream.ofString("hello");
+
+        // Simulate what the protocol layer does: provide a SpecificShapeDeserializer for the streaming member
+        var builder = SchemaConverter.createDocumentBuilder(schema);
+        builder.deserialize(new SpecificShapeDeserializer() {
+            @Override
+            public <T> void readStruct(Schema s, T state, StructMemberConsumer<T> consumer) {
+                consumer.accept(state, schema.member("body"), new SpecificShapeDeserializer() {
+                    @Override
+                    public DataStream readDataStream(Schema s2) {
+                        return ds;
+                    }
+                });
+            }
+        });
+
+        var result = builder.build();
+        assertThat(result.getMember("body").asDataStream(), equalTo(ds));
     }
 }

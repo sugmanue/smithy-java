@@ -22,8 +22,6 @@ import software.amazon.smithy.java.client.http.HttpClientProtocol;
 import software.amazon.smithy.java.client.http.HttpErrorDeserializer;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.Unit;
 import software.amazon.smithy.java.core.serde.Codec;
@@ -82,9 +80,9 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             // Top-level Unit types do not get serialized
             builder.headers(HttpHeaders.of(headersForEmptyBody()))
                     .body(DataStream.ofEmpty());
-        } else if (operation instanceof InputEventStreamingApiOperation<?, ?, ?> i) {
+        } else if (operation.inputEventBuilderSupplier() != null) {
             // Event streaming
-            var encoderFactory = getEventEncoderFactory(i);
+            var encoderFactory = getEventEncoderFactory(operation);
             var body = RpcEventStreamsUtil.bodyForEventStreaming(encoderFactory, input);
             builder.headers(HttpHeaders.of(headersForEventStreaming()))
                     .body(body);
@@ -108,8 +106,8 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
             throw errorDeserializer.createError(context, operation, typeRegistry, response);
         }
 
-        if (operation instanceof OutputEventStreamingApiOperation<I, O, ?> o) {
-            var eventDecoderFactory = getEventDecoderFactory(o);
+        if (operation.outputEventBuilderSupplier() != null) {
+            var eventDecoderFactory = getEventDecoderFactory(operation);
             return RpcEventStreamsUtil.deserializeResponse(eventDecoderFactory, bodyDataStream(response));
         }
 
@@ -154,22 +152,17 @@ public final class RpcV2CborProtocol extends HttpClientProtocol {
                 CONTENT_TYPE);
     }
 
-    private EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
-            InputEventStreamingApiOperation<?, ?, ?> inputOperation
-    ) {
-
+    private EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(ApiOperation<?, ?> operation) {
         // TODO: this is where you'd plumb through Sigv4 support, another frame transformer?
-        return AwsEventEncoderFactory.forInputStream(inputOperation,
+        return AwsEventEncoderFactory.forInputStream(operation,
                 payloadCodec(),
                 PAYLOAD_MEDIA_TYPE,
                 FrameTransformer.identity(),
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 
-    private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
-            OutputEventStreamingApiOperation<?, ?, ?> outputOperation
-    ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(), f -> f);
+    private EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventDecoderFactory.forOutputStream(operation, payloadCodec(), f -> f);
     }
 
     private static ShapeId extractErrorType(Document document, String namespace) {

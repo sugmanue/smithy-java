@@ -7,8 +7,7 @@ package software.amazon.smithy.java.aws.events;
 
 import java.util.Objects;
 import java.util.function.Supplier;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
+import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
@@ -60,8 +59,9 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
      * @param <IE>        The output event type
      * @return A new event decoder factory
      */
+    @SuppressWarnings("unchecked")
     public static <IE extends SerializableStruct> AwsEventDecoderFactory<IE, ?> forInputStream(
-            InputEventStreamingApiOperation<?, ?, IE> operation,
+            ApiOperation<?, ?> operation,
             Codec codec,
             FrameTransformer<AwsEventFrame> transformer
     ) {
@@ -70,7 +70,7 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
                 operation::inputBuilder,
                 operation.inputStreamMember(),
                 codec,
-                operation.inputEventBuilderSupplier(),
+                (Supplier<ShapeBuilder<IE>>) (Supplier<?>) operation.inputEventBuilderSupplier(),
                 transformer);
     }
 
@@ -83,8 +83,9 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
      * @param <OE>        The output event type
      * @return A new event decoder factory
      */
+    @SuppressWarnings("unchecked")
     public static <OE extends SerializableStruct> AwsEventDecoderFactory<OE, ?> forOutputStream(
-            OutputEventStreamingApiOperation<?, ?, OE> operation,
+            ApiOperation<?, ?> operation,
             Codec codec,
             FrameTransformer<AwsEventFrame> transformer
     ) {
@@ -93,7 +94,7 @@ public final class AwsEventDecoderFactory<E extends SerializableStruct, IR exten
                 operation::outputBuilder,
                 operation.outputStreamMember(),
                 codec,
-                operation.outputEventBuilderSupplier(),
+                (Supplier<ShapeBuilder<OE>>) (Supplier<?>) operation.outputEventBuilderSupplier(),
                 transformer);
     }
 

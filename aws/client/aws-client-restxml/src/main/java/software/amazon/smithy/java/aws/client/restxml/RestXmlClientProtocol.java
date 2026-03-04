@@ -21,8 +21,6 @@ import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.error.CallException;
 import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
 import software.amazon.smithy.java.core.serde.document.Document;
@@ -81,12 +79,10 @@ public final class RestXmlClientProtocol extends HttpBindingClientProtocol<AwsEv
     }
 
     @Override
-    protected EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
-            InputEventStreamingApiOperation<?, ?, ?> inputOperation
-    ) {
+    protected EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(ApiOperation<?, ?> operation) {
         // TODO: this is where you'd plumb through Sigv4 support, another frame transformer?
         return AwsEventEncoderFactory.forInputStream(
-                inputOperation,
+                operation,
                 payloadCodec(),
                 payloadMediaType(),
                 FrameTransformer.identity(),
@@ -94,10 +90,8 @@ public final class RestXmlClientProtocol extends HttpBindingClientProtocol<AwsEv
     }
 
     @Override
-    protected EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
-            OutputEventStreamingApiOperation<?, ?, ?> outputOperation
-    ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(), f -> f);
+    protected EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventDecoderFactory.forOutputStream(operation, payloadCodec(), f -> f);
     }
 
     private static final HttpErrorDeserializer.ErrorPayloadParser XML_ERROR_PAYLOAD_PARSER =

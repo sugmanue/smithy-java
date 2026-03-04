@@ -11,9 +11,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.ApiService;
 import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
@@ -24,6 +26,7 @@ import software.amazon.smithy.model.knowledge.ServiceIndex;
 import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.shapes.ShapeType;
 
 public final class DynamicOperation implements ApiOperation<StructDocument, StructDocument> {
 
@@ -34,6 +37,8 @@ public final class DynamicOperation implements ApiOperation<StructDocument, Stru
     private final List<Schema> errorSchemas;
     private final TypeRegistry typeRegistry;
     private final List<ShapeId> effectiveAuthSchemes;
+    private final Supplier<ShapeBuilder<? extends SerializableStruct>> inputEventBuilderSupplier;
+    private final Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventBuilderSupplier;
 
     DynamicOperation(
             ApiService service,
@@ -42,7 +47,9 @@ public final class DynamicOperation implements ApiOperation<StructDocument, Stru
             Schema outputSchema,
             Set<Schema> errorSchemas,
             TypeRegistry typeRegistry,
-            List<ShapeId> effectiveAuthSchemes
+            List<ShapeId> effectiveAuthSchemes,
+            Supplier<ShapeBuilder<? extends SerializableStruct>> inputEventBuilderSupplier,
+            Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventBuilderSupplier
     ) {
         this.service = service;
         this.effectiveAuthSchemes = effectiveAuthSchemes;
@@ -51,16 +58,8 @@ public final class DynamicOperation implements ApiOperation<StructDocument, Stru
         this.outputSchema = outputSchema;
         this.errorSchemas = List.copyOf(errorSchemas);
         this.typeRegistry = typeRegistry;
-        validateStreaming(inputSchema);
-        validateStreaming(outputSchema);
-    }
-
-    private static void validateStreaming(Schema schema) {
-        for (var member : schema.members()) {
-            if (member.hasTrait(TraitKey.STREAMING_TRAIT)) {
-                throw new UnsupportedOperationException("DynamicClient does not support streaming: " + member);
-            }
-        }
+        this.inputEventBuilderSupplier = inputEventBuilderSupplier;
+        this.outputEventBuilderSupplier = outputEventBuilderSupplier;
     }
 
     @Override
@@ -106,6 +105,16 @@ public final class DynamicOperation implements ApiOperation<StructDocument, Stru
     @Override
     public List<Schema> errorSchemas() {
         return errorSchemas;
+    }
+
+    @Override
+    public Supplier<ShapeBuilder<? extends SerializableStruct>> inputEventBuilderSupplier() {
+        return inputEventBuilderSupplier;
+    }
+
+    @Override
+    public Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventBuilderSupplier() {
+        return outputEventBuilderSupplier;
     }
 
     public static DynamicOperation create(
@@ -155,6 +164,22 @@ public final class DynamicOperation implements ApiOperation<StructDocument, Stru
             registry = TypeRegistry.compose(registryBuilder.build(), serviceErrorRegistry);
         }
 
+        // Detect event stream members for builder suppliers.
+        Supplier<ShapeBuilder<? extends SerializableStruct>> inputEventSupplier = null;
+        Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventSupplier = null;
+        for (var member : inputSchema.members()) {
+            if (member.hasTrait(TraitKey.STREAMING_TRAIT) && member.type() == ShapeType.UNION) {
+                inputEventSupplier = () -> SchemaConverter.createDocumentBuilder(member, service.getId());
+                break;
+            }
+        }
+        for (var member : outputSchema.members()) {
+            if (member.hasTrait(TraitKey.STREAMING_TRAIT) && member.type() == ShapeType.UNION) {
+                outputEventSupplier = () -> SchemaConverter.createDocumentBuilder(member, service.getId());
+                break;
+            }
+        }
+
         return new DynamicOperation(
                 apiService,
                 operationSchema,
@@ -162,6 +187,8 @@ public final class DynamicOperation implements ApiOperation<StructDocument, Stru
                 outputSchema,
                 Collections.unmodifiableSet(errorSchemas),
                 registry,
-                authSchemes);
+                authSchemes,
+                inputEventSupplier,
+                outputEventSupplier);
     }
 }
