@@ -114,7 +114,7 @@ public final class EnumGenerator<T extends ShapeDirective<Shape, CodeGenerationC
                 types.add(fieldName);
                 writer.putContext("fieldName", fieldName);
                 writer.putContext("className", className);
-                writer.write("${shape:T} ${fieldName:L} = new ${className:L}();");
+                writer.write("${shape:T} ${fieldName:L} = new $$${className:L}();");
                 writer.popState();
             }
             writer.putContext("types", types);
@@ -186,8 +186,8 @@ public final class EnumGenerator<T extends ShapeDirective<Shape, CodeGenerationC
                 var memberValue = enumValues.get(member.getMemberName());
 
                 var template = """
-                        final class ${className:L} implements ${shape:T} {
-                            private ${className:L}() {}
+                        final class $$${className:L} implements ${shape:T} {
+                            private $$${className:L}() {}
 
                             @Override
                             public ${value:N} getValue() {

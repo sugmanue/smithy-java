@@ -148,7 +148,7 @@ public class NamingTest extends AbstractCodegenFileTest {
         // Enum field stays as UPPER_SNAKE_CASE (like CAMEL_CASE), but inner class uses PascalCase + Type suffix (like CamelCaseType)
         // Sealed interface pattern: EnumCasing CAMEL_CASE = new CamelCaseType(); with getValue() returning "camelCase"
         var className = CaseUtils.toPascalCase(updated) + "Type";
-        assertTrue(fileStr.contains(String.format("EnumCasing %s = new %s();", updated, className)));
+        assertTrue(fileStr.contains(String.format("EnumCasing %s = new $%s();", updated, className)));
         assertTrue(fileStr.contains(String.format("return \"%s\";", original)));
     }
 }

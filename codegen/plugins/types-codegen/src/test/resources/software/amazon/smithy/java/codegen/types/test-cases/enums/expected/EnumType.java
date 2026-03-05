@@ -15,8 +15,8 @@ import software.amazon.smithy.utils.SmithyGenerated;
 
 @SmithyGenerated
 public sealed interface EnumType extends SerializableShape {
-    EnumType OPTION_ONE = new OptionOneType();
-    EnumType OPTION_TWO = new OptionTwoType();
+    EnumType OPTION_ONE = new $OptionOneType();
+    EnumType OPTION_TWO = new $OptionTwoType();
     List<EnumType> $TYPES = List.of(OPTION_ONE, OPTION_TWO);
 
     Schema $SCHEMA = Schema.createEnum(ShapeId.from("smithy.java.codegen.types.naming#EnumType"),
@@ -62,8 +62,8 @@ public sealed interface EnumType extends SerializableShape {
         };
     }
 
-    final class OptionOneType implements EnumType {
-        private OptionOneType() {}
+    final class $OptionOneType implements EnumType {
+        private $OptionOneType() {}
 
         @Override
         public String getValue() {
@@ -77,8 +77,8 @@ public sealed interface EnumType extends SerializableShape {
 
     }
 
-    final class OptionTwoType implements EnumType {
-        private OptionTwoType() {}
+    final class $OptionTwoType implements EnumType {
+        private $OptionTwoType() {}
 
         @Override
         public String getValue() {

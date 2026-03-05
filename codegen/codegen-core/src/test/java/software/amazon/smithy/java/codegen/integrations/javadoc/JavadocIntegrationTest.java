@@ -201,12 +201,12 @@ public class JavadocIntegrationTest extends AbstractCodegenFileTest {
                                      * @deprecated As of the past.
                                      */
                                     @Deprecated(since = "the past")
-                                    EnumWithDocs DOCUMENTED = new DocumentedType();
+                                    EnumWithDocs DOCUMENTED = new $DocumentedType();
                                     /**
                                      * General Docs
                                      */
                                     @SmithyUnstableApi
-                                    EnumWithDocs ALSO_DOCUMENTED = new AlsoDocumentedType();
+                                    EnumWithDocs ALSO_DOCUMENTED = new $AlsoDocumentedType();
                                 """));
     }
 

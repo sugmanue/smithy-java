@@ -14,9 +14,9 @@ import software.amazon.smithy.utils.SmithyGenerated;
 
 @SmithyGenerated
 public sealed interface IntEnumType extends SerializableShape {
-    IntEnumType FIRST = new FirstType();
-    IntEnumType SECOND = new SecondType();
-    IntEnumType FIFTH = new FifthType();
+    IntEnumType FIRST = new $FirstType();
+    IntEnumType SECOND = new $SecondType();
+    IntEnumType FIFTH = new $FifthType();
     List<IntEnumType> $TYPES = List.of(FIRST, SECOND, FIFTH);
 
     Schema $SCHEMA = Schema.createIntEnum(ShapeId.from("smithy.java.codegen.types.naming#IntEnumType"),
@@ -63,8 +63,8 @@ public sealed interface IntEnumType extends SerializableShape {
         };
     }
 
-    final class FirstType implements IntEnumType {
-        private FirstType() {}
+    final class $FirstType implements IntEnumType {
+        private $FirstType() {}
 
         @Override
         public int getValue() {
@@ -78,8 +78,8 @@ public sealed interface IntEnumType extends SerializableShape {
 
     }
 
-    final class SecondType implements IntEnumType {
-        private SecondType() {}
+    final class $SecondType implements IntEnumType {
+        private $SecondType() {}
 
         @Override
         public int getValue() {
@@ -93,8 +93,8 @@ public sealed interface IntEnumType extends SerializableShape {
 
     }
 
-    final class FifthType implements IntEnumType {
-        private FifthType() {}
+    final class $FifthType implements IntEnumType {
+        private $FifthType() {}
 
         @Override
         public int getValue() {
