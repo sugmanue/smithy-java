@@ -23,9 +23,8 @@ import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.ApiResource;
 import software.amazon.smithy.java.core.schema.ApiService;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
 import software.amazon.smithy.model.Model;
@@ -92,7 +91,7 @@ public final class OperationGenerator
 
                                         ${?hasInputEventStream}
                                         @Override
-                                        public ${supplier:T}<${sdkShapeBuilder:T}<${inputEventType:T}>> inputEventBuilderSupplier() {
+                                        public ${supplier:T}<${sdkShapeBuilder:T}<? extends ${serializableStruct:T}>> inputEventBuilderSupplier() {
                                             return () -> ${inputEventType:T}.builder();
                                         }
                                         ${/hasInputEventStream}
@@ -104,7 +103,7 @@ public final class OperationGenerator
 
                                         ${?hasOutputEventStream}
                                         @Override
-                                        public ${supplier:T}<${sdkShapeBuilder:T}<${outputEventType:T}>> outputEventBuilderSupplier() {
+                                        public ${supplier:T}<${sdkShapeBuilder:T}<? extends ${serializableStruct:T}>> outputEventBuilderSupplier() {
                                             return () -> ${outputEventType:T}.builder();
                                         }
                                         ${/hasOutputEventStream}
@@ -210,6 +209,7 @@ public final class OperationGenerator
                     var inputShape = directive.model().expectShape(shape.getInputShape());
                     eventStreamIndex.getInputInfo(shape).ifPresentOrElse(info -> {
                         writer.putContext("supplier", Supplier.class);
+                        writer.putContext("serializableStruct", SerializableStruct.class);
                         writer.putContext("hasInputEventStream", true);
                         writer.putContext("inputStreamMember", info.getEventStreamMember().getMemberName());
                         writer.putContext(
@@ -226,6 +226,7 @@ public final class OperationGenerator
 
                     eventStreamIndex.getOutputInfo(shape).ifPresentOrElse(info -> {
                         writer.putContext("supplier", Supplier.class);
+                        writer.putContext("serializableStruct", SerializableStruct.class);
                         writer.putContext("hasOutputEventStream", true);
                         writer.putContext("outputStreamMember", info.getEventStreamMember().getMemberName());
                         writer.putContext(
@@ -295,30 +296,7 @@ public final class OperationGenerator
             var outputShape = model.expectShape(shape.getOutputShape());
             var output = symbolProvider.toSymbol(outputShape);
 
-            var inputEventStreamInfo = index.getInputInfo(shape);
-            var outputEventStreamInfo = index.getOutputInfo(shape);
-            inputEventStreamInfo.ifPresent(
-                    info -> writer.writeInline(
-                            "$1T<$2T, $3T, $4T>",
-                            InputEventStreamingApiOperation.class,
-                            input,
-                            output,
-                            symbolProvider.toSymbol(info.getEventStreamTarget())));
-            outputEventStreamInfo.ifPresent(info -> {
-                if (inputEventStreamInfo.isPresent()) {
-                    writer.writeInline(", ");
-                }
-                writer.writeInline(
-                        "$1T<$2T, $3T, $4T>",
-                        OutputEventStreamingApiOperation.class,
-                        input,
-                        output,
-                        symbolProvider.toSymbol(info.getEventStreamTarget()));
-            });
-
-            if (inputEventStreamInfo.isEmpty() && outputEventStreamInfo.isEmpty()) {
-                writer.writeInline("$1T<$2T, $3T>", ApiOperation.class, input, output);
-            }
+            writer.writeInline("$1T<$2T, $3T>", ApiOperation.class, input, output);
         }
     }
 }

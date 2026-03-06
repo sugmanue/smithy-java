@@ -7,10 +7,10 @@ package software.amazon.smithy.java.aws.events.model;
 
 import java.util.List;
 import java.util.function.Supplier;
+import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.ApiService;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
 import software.amazon.smithy.model.shapes.ShapeId;
@@ -18,8 +18,7 @@ import software.amazon.smithy.utils.SmithyGenerated;
 
 @SmithyGenerated
 public final class TestOperation
-        implements InputEventStreamingApiOperation<TestOperationInput, TestOperationOutput, TestEventStream>,
-        OutputEventStreamingApiOperation<TestOperationInput, TestOperationOutput, TestEventStream> {
+        implements ApiOperation<TestOperationInput, TestOperationOutput> {
 
     private static final TestOperation $INSTANCE = new TestOperation();
 
@@ -51,7 +50,7 @@ public final class TestOperation
     }
 
     @Override
-    public Supplier<ShapeBuilder<TestEventStream>> inputEventBuilderSupplier() {
+    public Supplier<ShapeBuilder<? extends SerializableStruct>> inputEventBuilderSupplier() {
         return () -> TestEventStream.builder();
     }
 
@@ -61,7 +60,7 @@ public final class TestOperation
     }
 
     @Override
-    public Supplier<ShapeBuilder<TestEventStream>> outputEventBuilderSupplier() {
+    public Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventBuilderSupplier() {
         return () -> TestEventStream.builder();
     }
 

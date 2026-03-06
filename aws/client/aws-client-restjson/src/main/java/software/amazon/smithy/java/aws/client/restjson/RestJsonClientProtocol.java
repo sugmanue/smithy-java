@@ -19,15 +19,12 @@ import software.amazon.smithy.java.client.http.binding.HttpBindingClientProtocol
 import software.amazon.smithy.java.client.http.binding.HttpBindingErrorFactory;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
-import software.amazon.smithy.java.core.serde.event.FrameTransformer;
 import software.amazon.smithy.java.http.api.HttpRequest;
 import software.amazon.smithy.java.http.binding.RequestSerializer;
 import software.amazon.smithy.java.json.JsonCodec;
@@ -79,8 +76,8 @@ public final class RestJsonClientProtocol extends HttpBindingClientProtocol<AwsE
                 .omitEmptyPayload(omitEmptyPayload())
                 .allowEmptyStructPayload(hasStructPayload(input));
 
-        if (operation instanceof InputEventStreamingApiOperation<?, ?, ?> i) {
-            serializer.eventEncoderFactory(getEventEncoderFactory(i));
+        if (operation.inputEventBuilderSupplier() != null) {
+            serializer.eventEncoderFactory(getEventEncoderFactory(operation));
         }
 
         return serializer.serializeRequest();
@@ -107,23 +104,18 @@ public final class RestJsonClientProtocol extends HttpBindingClientProtocol<AwsE
     }
 
     @Override
-    protected EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
-            InputEventStreamingApiOperation<?, ?, ?> inputOperation
-    ) {
+    protected EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(ApiOperation<?, ?> operation) {
         // TODO: this is where you'd plumb through Sigv4 support, another frame transformer?
         return AwsEventEncoderFactory.forInputStream(
-                inputOperation,
+                operation,
                 payloadCodec(),
                 payloadMediaType(),
-                FrameTransformer.identity(),
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 
     @Override
-    protected EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
-            OutputEventStreamingApiOperation<?, ?, ?> outputOperation
-    ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(), f -> f);
+    protected EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventDecoderFactory.forOutputStream(operation, payloadCodec(), f -> f);
     }
 
     private <I extends SerializableStruct> boolean hasStructPayload(I input) {

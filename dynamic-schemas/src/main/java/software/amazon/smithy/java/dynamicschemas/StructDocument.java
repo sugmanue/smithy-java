@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
+import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.core.serde.document.DocumentUtils;
@@ -74,17 +75,25 @@ public final class StructDocument implements Document, SerializableStruct {
         throw new IllegalArgumentException("Document must be a map, structure, or union, but got " + delegate.type());
     }
 
+    private static Document convertStructureDocument(Schema schema, Document delegate, ShapeId service) {
+        Map<String, Document> result = new LinkedHashMap<>();
+        for (var member : schema.members()) {
+            var value = delegate.getMember(member.memberName());
+            if (value != null) {
+                result.put(member.memberName(), convertDocument(member, value, service));
+            }
+        }
+        return new StructDocument(schema, result, service);
+    }
+
     static Document convertDocument(Schema schema, Document delegate, ShapeId service) {
         return switch (schema.type()) {
-            case STRUCTURE, UNION -> {
-                Map<String, Document> result = new LinkedHashMap<>();
-                for (var member : schema.members()) {
-                    var value = delegate.getMember(member.memberName());
-                    if (value != null) {
-                        result.put(member.memberName(), convertDocument(member, value, service));
-                    }
+            case STRUCTURE -> convertStructureDocument(schema, delegate, service);
+            case UNION -> {
+                if (schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
+                    yield Document.of(schema, delegate.asEventStream());
                 }
-                yield new StructDocument(schema, result, service);
+                yield convertStructureDocument(schema, delegate, service);
             }
             case MAP -> {
                 Map<String, Document> result = new LinkedHashMap<>();
@@ -117,7 +126,12 @@ public final class StructDocument implements Document, SerializableStruct {
                     LONG, FLOAT, DOUBLE, BIG_INTEGER, BIG_DECIMAL ->
                 new ContentDocument(Document.ofNumber(delegate.asNumber()), schema);
             case DOCUMENT -> new ContentDocument(delegate, schema);
-            case BLOB -> new ContentDocument(Document.of(delegate.asBlob()), schema);
+            case BLOB -> {
+                if (schema.hasTrait(TraitKey.STREAMING_TRAIT)) {
+                    yield Document.of(schema, delegate.asDataStream());
+                }
+                yield new ContentDocument(Document.of(delegate.asBlob()), schema);
+            }
             default -> throw new IllegalArgumentException("Unsupported schema type: " + schema);
         };
     }

@@ -35,8 +35,10 @@ import software.amazon.smithy.java.core.serde.SerializationException;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.ToStringSerializer;
+import software.amazon.smithy.java.core.serde.event.EventStream;
 import software.amazon.smithy.java.core.testmodels.Bird;
 import software.amazon.smithy.java.core.testmodels.Person;
+import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.shapes.ShapeType;
 
 public class DocumentTest {
@@ -542,5 +544,46 @@ public class DocumentTest {
         var document = Document.of(1);
 
         assertThat(document.size(), is(-1));
+    }
+
+    @Test
+    public void ofObjectCreatesDataStreamDocument() {
+        var ds = DataStream.ofString("hello");
+        var document = Document.ofObject(ds);
+
+        assertThat(document.type(), is(ShapeType.BLOB));
+        assertThat(document.asDataStream(), is(ds));
+        assertThat(document.asObject(), is(ds));
+    }
+
+    @Test
+    public void ofObjectCreatesEventStreamDocument() {
+        var es = EventStream.newWriter();
+        var document = Document.ofObject(es);
+
+        assertThat(document.type(), is(ShapeType.UNION));
+        assertThat(document.asEventStream(), is(es));
+        assertThat(document.asObject(), is(es));
+    }
+
+    @Test
+    public void ofObjectHandlesDataStreamInMap() {
+        var ds = DataStream.ofString("hello");
+        var document = Document.ofObject(Map.of("body", ds));
+
+        assertThat(document.type(), is(ShapeType.MAP));
+        assertThat(document.getMember("body").asDataStream(), is(ds));
+    }
+
+    @Test
+    public void asDataStreamThrowsForNonStreamDocument() {
+        var document = Document.of("hello");
+        Assertions.assertThrows(SerializationException.class, document::asDataStream);
+    }
+
+    @Test
+    public void asEventStreamThrowsForNonStreamDocument() {
+        var document = Document.of("hello");
+        Assertions.assertThrows(SerializationException.class, document::asEventStream);
     }
 }

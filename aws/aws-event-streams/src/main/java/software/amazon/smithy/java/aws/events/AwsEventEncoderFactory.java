@@ -7,15 +7,13 @@ package software.amazon.smithy.java.aws.events;
 
 import java.util.Objects;
 import java.util.function.Function;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
+import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.java.core.serde.event.FrameEncoder;
-import software.amazon.smithy.java.core.serde.event.FrameTransformer;
 
 /**
  * A {@link EventEncoderFactory} for AWS events.
@@ -25,7 +23,6 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
     private final Schema schema;
     private final Codec codec;
     private final String payloadMediaType;
-    private final FrameTransformer<AwsEventFrame> transformer;
     private final Function<Throwable, EventStreamingException> exceptionHandler;
 
     private AwsEventEncoderFactory(
@@ -33,14 +30,12 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
             Schema schema,
             Codec codec,
             String payloadMediaType,
-            FrameTransformer<AwsEventFrame> transformer,
             Function<Throwable, EventStreamingException> exceptionHandler
     ) {
         this.initialEventType = Objects.requireNonNull(initialEventType, "initialEventType");
         this.schema = Objects.requireNonNull(schema, "schema").isMember() ? schema.memberTarget() : schema;
         this.codec = Objects.requireNonNull(codec, "codec");
         this.payloadMediaType = Objects.requireNonNull(payloadMediaType, "payloadMediaType");
-        this.transformer = Objects.requireNonNull(transformer, "transformer");
         this.exceptionHandler = Objects.requireNonNull(exceptionHandler, "exceptionHandler");
     }
 
@@ -54,17 +49,15 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
      * @return A new event encoder factory
      */
     public static AwsEventEncoderFactory forInputStream(
-            InputEventStreamingApiOperation<?, ?, ?> operation,
+            ApiOperation<?, ?> operation,
             Codec codec,
             String payloadMediaType,
-            FrameTransformer<AwsEventFrame> transformer,
             Function<Throwable, EventStreamingException> exceptionHandler
     ) {
         return new AwsEventEncoderFactory(InitialEventType.INITIAL_REQUEST,
                 operation.inputStreamMember(),
                 codec,
                 payloadMediaType,
-                transformer,
                 exceptionHandler);
     }
 
@@ -78,17 +71,15 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
      * @return A new event encoder factory
      */
     public static AwsEventEncoderFactory forOutputStream(
-            OutputEventStreamingApiOperation<?, ?, ?> operation,
+            ApiOperation<?, ?> operation,
             Codec codec,
             String payloadMediaType,
-            FrameTransformer<AwsEventFrame> transformer,
             Function<Throwable, EventStreamingException> exceptionHandler
     ) {
         return new AwsEventEncoderFactory(InitialEventType.INITIAL_RESPONSE,
                 operation.outputStreamMember(),
                 codec,
                 payloadMediaType,
-                transformer,
                 exceptionHandler);
     }
 
@@ -98,7 +89,6 @@ public final class AwsEventEncoderFactory implements EventEncoderFactory<AwsEven
                 schema,
                 codec,
                 payloadMediaType,
-                transformer,
                 exceptionHandler);
     }
 

@@ -21,15 +21,12 @@ import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.error.CallException;
 import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.core.serde.event.EventDecoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventEncoderFactory;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
-import software.amazon.smithy.java.core.serde.event.FrameTransformer;
 import software.amazon.smithy.java.http.api.HttpResponse;
 import software.amazon.smithy.java.xml.XmlCodec;
 import software.amazon.smithy.java.xml.XmlUtil;
@@ -81,23 +78,17 @@ public final class RestXmlClientProtocol extends HttpBindingClientProtocol<AwsEv
     }
 
     @Override
-    protected EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(
-            InputEventStreamingApiOperation<?, ?, ?> inputOperation
-    ) {
-        // TODO: this is where you'd plumb through Sigv4 support, another frame transformer?
+    protected EventEncoderFactory<AwsEventFrame> getEventEncoderFactory(ApiOperation<?, ?> operation) {
         return AwsEventEncoderFactory.forInputStream(
-                inputOperation,
+                operation,
                 payloadCodec(),
                 payloadMediaType(),
-                FrameTransformer.identity(),
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 
     @Override
-    protected EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(
-            OutputEventStreamingApiOperation<?, ?, ?> outputOperation
-    ) {
-        return AwsEventDecoderFactory.forOutputStream(outputOperation, payloadCodec(), f -> f);
+    protected EventDecoderFactory<AwsEventFrame> getEventDecoderFactory(ApiOperation<?, ?> operation) {
+        return AwsEventDecoderFactory.forOutputStream(operation, payloadCodec(), f -> f);
     }
 
     private static final HttpErrorDeserializer.ErrorPayloadParser XML_ERROR_PAYLOAD_PARSER =

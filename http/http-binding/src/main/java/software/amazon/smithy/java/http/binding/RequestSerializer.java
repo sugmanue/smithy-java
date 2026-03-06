@@ -9,7 +9,6 @@ import java.net.URI;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableShape;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
@@ -166,7 +165,7 @@ public final class RequestSerializer {
                 .uri(targetEndpoint);
 
         var eventStream = serializer.getEventStream();
-        if (eventStream != null && operation instanceof InputEventStreamingApiOperation<?, ?, ?>) {
+        if (eventStream != null && operation.inputEventBuilderSupplier() != null) {
             ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
                     ProtocolEventStreamWriter.of(eventStream);
             writer.bootstrap((EventEncoderFactory) eventStreamEncodingFactory, null);

@@ -6,6 +6,7 @@
 package software.amazon.smithy.java.core.schema;
 
 import java.util.List;
+import java.util.function.Supplier;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
 import software.amazon.smithy.model.shapes.ShapeId;
 
@@ -104,6 +105,24 @@ public interface ApiOperation<I extends SerializableStruct, O extends Serializab
                 return m;
             }
         }
+        return null;
+    }
+
+    /**
+     * Get a supplier of builders for input event stream shapes.
+     *
+     * @return a supplier of input event shape builders, or null if the operation has no input event stream.
+     */
+    default Supplier<ShapeBuilder<? extends SerializableStruct>> inputEventBuilderSupplier() {
+        return null;
+    }
+
+    /**
+     * Get a supplier of builders for output event stream shapes.
+     *
+     * @return a supplier of output event shape builders, or null if the operation has no output event stream.
+     */
+    default Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventBuilderSupplier() {
         return null;
     }
 

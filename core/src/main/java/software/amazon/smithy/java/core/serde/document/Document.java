@@ -18,10 +18,13 @@ import java.util.Set;
 import software.amazon.smithy.java.core.schema.PreludeSchemas;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableShape;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.serde.SerializationException;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
+import software.amazon.smithy.java.core.serde.event.EventStream;
+import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
 
@@ -321,6 +324,48 @@ public interface Document extends SerializableShape {
      */
     default Instant asTimestamp() {
         throw new SerializationException("Expected a timestamp document, but found " + type());
+    }
+
+    /**
+     * Get the Document as a {@link DataStream} if it wraps a streaming blob.
+     *
+     * @return the data stream.
+     * @throws SerializationException if the Document does not wrap a data stream.
+     */
+    default DataStream asDataStream() {
+        throw new SerializationException("Expected a data stream document, but found " + type());
+    }
+
+    /**
+     * Get the Document as an {@link EventStream} if it wraps a streaming union.
+     *
+     * @return the event stream.
+     * @throws SerializationException if the Document does not wrap an event stream.
+     */
+    default EventStream<? extends SerializableStruct> asEventStream() {
+        throw new SerializationException("Expected an event stream document, but found " + type());
+    }
+
+    /**
+     * Create a Document wrapping a {@link DataStream} with a specific schema.
+     *
+     * @param schema Schema to associate with the stream.
+     * @param dataStream The data stream to wrap.
+     * @return the Document type.
+     */
+    static Document of(Schema schema, DataStream dataStream) {
+        return new DataStreamDocument(schema, dataStream);
+    }
+
+    /**
+     * Create a Document wrapping an {@link EventStream} with a specific schema.
+     *
+     * @param schema Schema to associate with the stream.
+     * @param eventStream The event stream to wrap.
+     * @return the Document type.
+     */
+    static Document of(Schema schema, EventStream<? extends SerializableStruct> eventStream) {
+        return new EventStreamDocument(schema, eventStream);
     }
 
     /**
@@ -626,6 +671,8 @@ public interface Document extends SerializableShape {
      * <ul>
      *     <li>{@link Document}</li>
      *     <li>{@link SerializableShape}</li>
+     *     <li>{@link DataStream} to streaming blob</li>
+     *     <li>{@link EventStream} to streaming union</li>
      *     <li>{@link String}</li>
      *     <li>{@code byte[]} to blob</li>
      *     <li>{@link Instant} to timestamp</li>
@@ -650,6 +697,8 @@ public interface Document extends SerializableShape {
         return switch (o) {
             case Document d -> d;
             case SerializableShape s -> of(s);
+            case DataStream ds -> new DataStreamDocument(PreludeSchemas.BLOB, ds);
+            case EventStream<?> es -> new EventStreamDocument(PreludeSchemas.DOCUMENT, es);
             case String s -> of(s);
             case Boolean b -> of(b);
             case Number n -> ofNumber(n);

@@ -21,6 +21,8 @@ import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.schema.ApiOperation;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
+import software.amazon.smithy.java.core.serde.event.Frame;
+import software.amazon.smithy.java.core.serde.event.ProtocolEventStreamWriter;
 import software.amazon.smithy.java.retries.api.RetryStrategy;
 import software.amazon.smithy.utils.SmithyInternalApi;
 
@@ -67,6 +69,10 @@ public abstract class Client {
             ApiOperation<I, O> operation,
             RequestOverrideConfig overrideConfig
     ) {
+        ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> eventStreamWriter = null;
+        if (operation.inputEventBuilderSupplier() != null) {
+            eventStreamWriter = ProtocolEventStreamWriter.of(input.getMemberValue(operation.inputStreamMember()));
+        }
         ClientPipeline<?, ?> callPipeline = pipeline;
         IdentityResolvers callIdentityResolvers = identityResolvers;
         ClientInterceptor callInterceptor = interceptor;
@@ -95,6 +101,7 @@ public abstract class Client {
 
         var callBuilder = ClientCall.<I, O>builder();
         callBuilder.input = input;
+        callBuilder.eventStreamWriter = eventStreamWriter;
         callBuilder.operation = operation;
         callBuilder.interceptor = callInterceptor;
         callBuilder.identityResolvers = callIdentityResolvers;

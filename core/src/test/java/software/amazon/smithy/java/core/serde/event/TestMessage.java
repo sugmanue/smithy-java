@@ -100,6 +100,11 @@ public final class TestMessage {
         public TestFrame encodeFailure(Throwable exception) {
             return null;
         }
+
+        @Override
+        public TestFrame closingFrame() {
+            return null;
+        }
     }
 
     static class TestEvent implements SerializableStruct {

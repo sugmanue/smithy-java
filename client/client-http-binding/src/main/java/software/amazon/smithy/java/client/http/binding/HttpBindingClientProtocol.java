@@ -11,8 +11,6 @@ import software.amazon.smithy.java.client.http.HttpErrorDeserializer;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.error.CallException;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.InputEventStreamingApiOperation;
-import software.amazon.smithy.java.core.schema.OutputEventStreamingApiOperation;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.TypeRegistry;
@@ -55,11 +53,11 @@ public abstract class HttpBindingClientProtocol<F extends Frame<?>> extends Http
         return httpBinding;
     }
 
-    protected EventEncoderFactory<F> getEventEncoderFactory(InputEventStreamingApiOperation<?, ?, ?> inputOperation) {
+    protected EventEncoderFactory<F> getEventEncoderFactory(ApiOperation<?, ?> operation) {
         throw new UnsupportedOperationException("This protocol does not support event streaming");
     }
 
-    protected EventDecoderFactory<F> getEventDecoderFactory(OutputEventStreamingApiOperation<?, ?, ?> outputOperation) {
+    protected EventDecoderFactory<F> getEventDecoderFactory(ApiOperation<?, ?> operation) {
         throw new UnsupportedOperationException("This protocol does not support event streaming");
     }
 
@@ -78,8 +76,8 @@ public abstract class HttpBindingClientProtocol<F extends Frame<?>> extends Http
                 .endpoint(endpoint)
                 .omitEmptyPayload(omitEmptyPayload());
 
-        if (operation instanceof InputEventStreamingApiOperation<?, ?, ?> i) {
-            serializer.eventEncoderFactory(getEventEncoderFactory(i));
+        if (operation.inputEventBuilderSupplier() != null) {
+            serializer.eventEncoderFactory(getEventEncoderFactory(operation));
         }
 
         return serializer.serializeRequest();
@@ -106,8 +104,8 @@ public abstract class HttpBindingClientProtocol<F extends Frame<?>> extends Http
                 .outputShapeBuilder(outputBuilder)
                 .response(response);
 
-        if (operation instanceof OutputEventStreamingApiOperation<?, ?, ?> o) {
-            deser.eventDecoderFactory(getEventDecoderFactory(o));
+        if (operation.outputEventBuilderSupplier() != null) {
+            deser.eventDecoderFactory(getEventDecoderFactory(operation));
         }
 
         deser.deserialize();
