@@ -34,7 +34,7 @@ public interface EventEncoderFactory<F extends Frame<?>> {
     String contentType();
 
     /**
-     * Composes the factory with the given frame processor. The processor be composed with other existing processors
+     * Composes the factory with the given frame processor. The processor is composed with other existing processors
      * in the order those are created. For instance
      *
      * {@snippet java:
