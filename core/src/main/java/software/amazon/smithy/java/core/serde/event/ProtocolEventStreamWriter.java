@@ -60,8 +60,8 @@ public sealed interface ProtocolEventStreamWriter<T extends SerializableStruct, 
     @SuppressWarnings("unchecked")
     static <T extends SerializableStruct, IE extends SerializableStruct,
             F extends Frame<?>> ProtocolEventStreamWriter<T, IE, F> of(
-            EventStream<? extends SerializableStruct> writer
-    ) {
+                    EventStream<? extends SerializableStruct> writer
+            ) {
         if (!(writer instanceof ProtocolEventStreamWriter)) {
             throw new IllegalArgumentException("writer must be an instance of ProtocolEventStreamWriter");
         }
