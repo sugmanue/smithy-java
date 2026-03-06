@@ -34,7 +34,15 @@ public interface EventEncoderFactory<F extends Frame<?>> {
     String contentType();
 
     /**
-     * Composes the factory with the given frame processor.
+     * Composes the factory with the given frame processor. The processor be composed with other existing processors
+     * in the order those are created. For instance
+     *
+     * {@snippet java:
+     *    // This factory will first apply the GzipFrameProcessor and then the SigningFrameProcessor.
+     *    var factory = awsEncoderFactory.withFrameProcessor(new GzipFrameProcessor())
+     *                            .withFrameProcessor(new SigningFrameProcessor());
+     *
+     * }
      *
      * @param frameProcessor the frame processor
      * @return the composed factory

@@ -47,7 +47,7 @@ public interface FrameProcessor<F extends Frame<?>> {
         return (FrameProcessor<F>) IdentityFrameProcessor.INSTANCE;
     }
 
-    class IdentityFrameProcessor<F extends Frame<?>> implements FrameProcessor<F> {
+    final class IdentityFrameProcessor<F extends Frame<?>> implements FrameProcessor<F> {
         static IdentityFrameProcessor<?> INSTANCE = new IdentityFrameProcessor<>();
 
         @Override
