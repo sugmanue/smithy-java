@@ -21,6 +21,7 @@ import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
 import software.amazon.smithy.java.core.serde.event.EventDecoder;
 import software.amazon.smithy.java.core.serde.event.EventStream;
+import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 
 /**
  * A decoder for AWS events
@@ -58,8 +59,28 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
 
     private E decodeEvent(AwsEventFrame frame) {
         var message = frame.unwrap();
-        // TODO Add support for :message-type other than "event".
+        var messageType = getMessageType(message);
+        if ("error".equals(messageType)) {
+            decodeErrorAndThrow(message);
+        } else if ("exception".equals(messageType)) {
+            return decodeModeledException(message);
+        } else if (!"event".equals(messageType)) {
+            throw new IllegalArgumentException("Invalid message type: " + messageType);
+        }
         var eventType = getEventType(message);
+        return decodePayload(eventType, message);
+    }
+
+    private E decodeModeledException(Message message) {
+        var exceptionTypeHeader = message.getHeaders().get(":exception-type");
+        if (exceptionTypeHeader == null) {
+            throw new IllegalStateException("expected headers to have ':exception-type' header");
+        }
+        var exceptionType = exceptionTypeHeader.getString();
+        return decodePayload(exceptionType, message);
+    }
+
+    private E decodePayload(String eventType, Message message) {
         var memberSchema = eventSchema.member(eventType);
         if (memberSchema == null) {
             throw new IllegalArgumentException("Unsupported event type: " + eventType);
@@ -73,6 +94,14 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
         var builder = eventBuilder.get();
         builder.setMemberValue(memberSchema, shapeBuilder.build());
         return builder.build();
+    }
+
+    private void decodeErrorAndThrow(Message message) {
+        var errorCodeHeader = message.getHeaders().get(":error-code");
+        var errorCode = errorCodeHeader != null ? errorCodeHeader.getString() : "unknown error code";
+        var errorMessageHeder = message.getHeaders().get(":error-message");
+        var errorMessage = errorMessageHeder != null ? errorMessageHeder.getString() : "unknown error message";
+        throw new EventStreamingException(errorCode, errorMessage);
     }
 
     @Override

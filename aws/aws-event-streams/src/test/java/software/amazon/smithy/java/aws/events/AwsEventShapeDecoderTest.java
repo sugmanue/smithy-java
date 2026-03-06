@@ -7,19 +7,26 @@ package software.amazon.smithy.java.aws.events;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.aws.events.model.BodyAndHeaderEvent;
+import software.amazon.smithy.java.aws.events.model.EventStreamWithError;
 import software.amazon.smithy.java.aws.events.model.HeadersOnlyEvent;
+import software.amazon.smithy.java.aws.events.model.MyError;
 import software.amazon.smithy.java.aws.events.model.StringEvent;
 import software.amazon.smithy.java.aws.events.model.StructureEvent;
 import software.amazon.smithy.java.aws.events.model.TestEventStream;
 import software.amazon.smithy.java.aws.events.model.TestOperation;
 import software.amazon.smithy.java.aws.events.model.TestOperationOutput;
+import software.amazon.smithy.java.aws.events.model.TestOperationWithException;
+import software.amazon.smithy.java.core.schema.ApiOperation;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.Codec;
+import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.java.json.JsonCodec;
 
 class AwsEventShapeDecoderTest {
@@ -36,7 +43,7 @@ class AwsEventShapeDecoderTest {
         var frame = new AwsEventFrame(message);
 
         // Act
-        var struct = createDecoder().decodeInitialEvent(frame, null);
+        var struct = createDecoder(TestOperation.instance()).decodeInitialEvent(frame, null);
 
         // Assert
         assertInstanceOf(TestOperationOutput.class, struct);
@@ -59,12 +66,12 @@ class AwsEventShapeDecoderTest {
         var frame = new AwsEventFrame(message);
 
         // Act
-        var struct = createDecoder().decode(frame);
+        var struct = createDecoder(TestOperation.instance()).decode(frame);
 
         // Assert
         assertInstanceOf(TestEventStream.class, struct);
         var actual = (TestEventStream) struct;
-        assertEquals(TestEventStream.Type.headersOnlyMember, actual.type());
+        assertInstanceOf(TestEventStream.HeadersOnlyMemberMember.class, actual);
         var expected = TestEventStream.builder()
                 .headersOnlyMember(HeadersOnlyEvent.builder().sequenceNum(123).build())
                 .build();
@@ -82,12 +89,12 @@ class AwsEventShapeDecoderTest {
         var frame = new AwsEventFrame(message);
 
         // Act
-        var struct = createDecoder().decode(frame);
+        var struct = createDecoder(TestOperation.instance()).decode(frame);
 
         // Assert
         assertInstanceOf(TestEventStream.class, struct);
         var actual = (TestEventStream) struct;
-        assertEquals(TestEventStream.Type.structureMember, actual.type());
+        assertInstanceOf(TestEventStream.StructureMemberMember.class, actual);
         var expected = TestEventStream.builder()
                 .structureMember(StructureEvent.builder().foo("memberFooValue").build())
                 .build();
@@ -106,12 +113,12 @@ class AwsEventShapeDecoderTest {
         var frame = new AwsEventFrame(message);
 
         // Act
-        var struct = createDecoder().decode(frame);
+        var struct = createDecoder(TestOperation.instance()).decode(frame);
 
         // Assert
         assertInstanceOf(TestEventStream.class, struct);
         var actual = (TestEventStream) struct;
-        assertEquals(TestEventStream.Type.bodyAndHeaderMember, actual.type());
+        assertInstanceOf(TestEventStream.BodyAndHeaderMemberMember.class, actual);
         var expected = TestEventStream.builder()
                 .bodyAndHeaderMember(BodyAndHeaderEvent.builder()
                         .intMember(123)
@@ -127,29 +134,82 @@ class AwsEventShapeDecoderTest {
         var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
                 .contentType("text/json")
                 .eventType("stringMember")
-                .build();;
+                .build();
         var message = new Message(headers, "\"hello world!\"".getBytes(StandardCharsets.UTF_8));
         var frame = new AwsEventFrame(message);
 
         // Act
-        var struct = createDecoder().decode(frame);
+        var struct = createDecoder(TestOperation.instance()).decode(frame);
 
         // Assert
         assertInstanceOf(TestEventStream.class, struct);
         var actual = (TestEventStream) struct;
-        assertEquals(TestEventStream.Type.stringMember, actual.type());
+        assertInstanceOf(TestEventStream.StringMemberMember.class, actual);
         var expected = TestEventStream.builder()
                 .stringMember(StringEvent.builder().payload("hello world!").build())
                 .build();
         assertEquals(expected, actual);
     }
 
+    @Test
+    public void testDecodeExceptionMember() {
+        // Arrange
+        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+                .contentType("text/json")
+                .messageType("exception")
+                .exceptionType("modeledErrorMember")
+                .build();
+        var message = new Message(headers, "{\"message\":\"Client exception\"}".getBytes(StandardCharsets.UTF_8));
+        var frame = new AwsEventFrame(message);
+
+        // Act
+        var struct = createDecoder(TestOperationWithException.instance()).decode(frame);
+
+        // Assert
+        assertInstanceOf(EventStreamWithError.class, struct);
+        var actual = (EventStreamWithError) struct;
+        assertInstanceOf(EventStreamWithError.ModeledErrorMemberMember.class, actual);
+        var expected = EventStreamWithError.builder()
+                .modeledErrorMember(MyError.builder().message("Client exception").build())
+                .build();
+        assertEquals(((EventStreamWithError.ModeledErrorMemberMember) expected).getValue().getMessage(),
+                ((EventStreamWithError.ModeledErrorMemberMember) actual).getValue().getMessage());
+    }
+
+    @Test
+    public void testDecodeError() {
+        // Arrange
+        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+                .messageType("error")
+                .put(":error-code", "InternalFailure")
+                .put(":error-message", "An internal server error occurred")
+                .build();
+        var message = new Message(headers, new byte[0]);
+        var frame = new AwsEventFrame(message);
+
+        // Act
+        Exception except = null;
+        try {
+            createDecoder(TestOperationWithException.instance()).decode(frame);
+        } catch (Exception e) {
+            except = e;
+        }
+
+        // Assert
+        assertNotNull(except);
+        assertInstanceOf(EventStreamingException.class, except);
+        var eventStreamingException = (EventStreamingException) except;
+        assertEquals(eventStreamingException.getErrorCode(), "InternalFailure");
+        assertEquals(eventStreamingException.getMessage(), "An internal server error occurred");
+    }
+
     @SuppressWarnings("unchecked")
-    static AwsEventShapeDecoder<?, ?> createDecoder() {
+    static <I extends SerializableStruct,
+            O extends SerializableStruct> AwsEventShapeDecoder<?, ?> createDecoder(ApiOperation<I, O> operation) {
         return new AwsEventShapeDecoder<>(InitialEventType.INITIAL_RESPONSE,
-                () -> TestOperation.instance().outputBuilder(), // output builder
-                (Supplier) TestOperation.instance().outputEventBuilderSupplier(),
-                TestOperation.instance().outputStreamMember(),
+                () -> operation.outputBuilder(), // output builder
+                (Supplier) operation.outputEventBuilderSupplier(),
+                operation.outputStreamMember(),
                 createJsonCodec());
     }
 

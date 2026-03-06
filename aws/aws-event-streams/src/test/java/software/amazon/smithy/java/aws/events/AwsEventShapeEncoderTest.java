@@ -13,11 +13,15 @@ import org.junit.jupiter.api.Test;
 import software.amazon.eventstream.HeaderValue;
 import software.amazon.smithy.java.aws.events.model.BodyAndHeaderEvent;
 import software.amazon.smithy.java.aws.events.model.HeadersOnlyEvent;
+import software.amazon.smithy.java.aws.events.model.MyError;
 import software.amazon.smithy.java.aws.events.model.StringEvent;
 import software.amazon.smithy.java.aws.events.model.StructureEvent;
 import software.amazon.smithy.java.aws.events.model.TestEventStream;
 import software.amazon.smithy.java.aws.events.model.TestOperation;
 import software.amazon.smithy.java.aws.events.model.TestOperationInput;
+import software.amazon.smithy.java.aws.events.model.TestOperationWithException;
+import software.amazon.smithy.java.core.schema.ApiOperation;
+import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.java.json.JsonCodec;
@@ -27,7 +31,7 @@ class AwsEventShapeEncoderTest {
     @Test
     public void testEncodeInitialRequest() {
         // Arrange
-        var encoder = createEncoder();
+        var encoder = createEncoder(TestOperation.instance());
         var event = TestOperationInput.builder()
                 .headerString("headerValue")
                 .inputStringMember("inputStringValue")
@@ -48,7 +52,7 @@ class AwsEventShapeEncoderTest {
     @Test
     public void testEncodeHeadersOnlyMember() {
         // Arrange
-        var encoder = createEncoder();
+        var encoder = createEncoder(TestOperation.instance());
         var event = TestEventStream.builder()
                 .headersOnlyMember(HeadersOnlyEvent.builder().sequenceNum(123).build())
                 .build();
@@ -69,7 +73,7 @@ class AwsEventShapeEncoderTest {
     @Test
     public void testEncodeStructureMember() {
         // Arrange
-        var encoder = createEncoder();
+        var encoder = createEncoder(TestOperation.instance());
         var event = TestEventStream.builder()
                 .structureMember(StructureEvent.builder().foo("memberFooValue").build())
                 .build();
@@ -89,7 +93,7 @@ class AwsEventShapeEncoderTest {
     @Test
     public void testEncodeBodyAndHeaderMember() {
         // Arrange
-        var encoder = createEncoder();
+        var encoder = createEncoder(TestOperation.instance());
         var event = TestEventStream.builder()
                 .bodyAndHeaderMember(BodyAndHeaderEvent.builder()
                         .intMember(123)
@@ -113,7 +117,7 @@ class AwsEventShapeEncoderTest {
     @Test
     public void testEncodeStringMember() {
         // Arrange
-        var encoder = createEncoder();
+        var encoder = createEncoder(TestOperation.instance());
         var event = TestEventStream.builder()
                 .stringMember(StringEvent.builder().payload("hello world!").build())
                 .build();
@@ -130,9 +134,48 @@ class AwsEventShapeEncoderTest {
         assertEquals("\"hello world!\"", new String(result.unwrap().getPayload()));
     }
 
-    static AwsEventShapeEncoder createEncoder() {
+    @Test
+    public void testEncodeException() {
+        // Arrange
+        var encoder = createEncoder(TestOperationWithException.instance());
+        var exception = MyError.builder().message("Event stream exception").build();
+
+        // Act
+        var result = encoder.encodeFailure(exception);
+
+        // Assert
+        var expectedHeaders = new HeadersBuilder()
+                .contentType("text/json")
+                .messageType("exception")
+                .exceptionType("modeledErrorMember")
+                .build();
+        assertEquals(expectedHeaders, result.unwrap().getHeaders());
+        assertEquals("{\"message\":\"Event stream exception\"}", new String(result.unwrap().getPayload()));
+    }
+
+    @Test
+    public void testEncodeError() {
+        // Arrange
+        var encoder = createEncoder(TestOperationWithException.instance());
+        var exception = new NullPointerException("something caused a null pointer exception");
+
+        // Act
+        var result = encoder.encodeFailure(exception);
+
+        // Assert
+        var expectedHeaders = new HeadersBuilder()
+                .messageType("error")
+                .put(":error-message", "Internal Server Error")
+                .put(":error-code", "InternalServerException")
+                .build();
+        assertEquals(expectedHeaders, result.unwrap().getHeaders());
+        assertEquals("", new String(result.unwrap().getPayload()));
+    }
+
+    static <I extends SerializableStruct,
+            O extends SerializableStruct> AwsEventShapeEncoder createEncoder(ApiOperation<I, O> operation) {
         return new AwsEventShapeEncoder(InitialEventType.INITIAL_REQUEST,
-                TestOperation.instance().inputStreamMember(), // event schema
+                operation.outputStreamMember(), // event schema
                 createJsonCodec(), // codec
                 "text/json",
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
@@ -161,6 +204,11 @@ class AwsEventShapeEncoderTest {
 
         public HeadersBuilder eventType(String eventType) {
             headers.put(":event-type", HeaderValue.fromString(eventType));
+            return this;
+        }
+
+        public HeadersBuilder exceptionType(String eventType) {
+            headers.put(":exception-type", HeaderValue.fromString(eventType));
             return this;
         }
 

@@ -17,7 +17,7 @@ import software.amazon.smithy.utils.SmithyGenerated;
 public final class EventStreamingTestServiceApiService implements ApiService {
     private static final EventStreamingTestServiceApiService $INSTANCE = new EventStreamingTestServiceApiService();
     private static final Schema $SCHEMA =
-            Schema.createService(ShapeId.from("smithy.test.eventstreaming#EventStreamingTestService"));
+            Schema.createService(ShapeId.from("smithy.example.eventstreaming#EventStreamingTestService"));
 
     /**
      * Get an instance of this {@code ApiService}.
