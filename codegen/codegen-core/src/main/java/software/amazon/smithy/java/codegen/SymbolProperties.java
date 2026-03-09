@@ -68,6 +68,11 @@ public final class SymbolProperties {
     public static final Property<Symbol> ENUM_VALUE_TYPE = Property.named("enum-value-type");
 
     /**
+     * Symbol representing the class name for an enum variant.
+     */
+    public static final Property<String> ENUM_VARIANT_CLASS_NAME = Property.named("enum-value-class-name");
+
+    /**
      * Indicates that the symbol is defined outside the current closure.
      */
     public static final Property<Boolean> EXTERNAL_TYPE = Property.named("external-type");

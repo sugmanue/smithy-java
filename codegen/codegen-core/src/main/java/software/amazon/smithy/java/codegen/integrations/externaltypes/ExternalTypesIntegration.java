@@ -104,6 +104,10 @@ public final class ExternalTypesIntegration implements JavaCodegenIntegration {
                             .references(List.of(new SymbolReference(keySymbol), new SymbolReference(valueSymbol)))
                             .build();
                 }
+                if (shape.getId().equals(ShapeId.from("smithy.api#Unit"))) {
+                    return symbolProvider.toSymbol(shape);
+                }
+
                 return symbolProvider.toSymbol(shape);
             }
 

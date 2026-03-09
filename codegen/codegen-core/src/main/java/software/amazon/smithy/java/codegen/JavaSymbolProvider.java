@@ -51,6 +51,7 @@ import software.amazon.smithy.model.shapes.TimestampShape;
 import software.amazon.smithy.model.shapes.UnionShape;
 import software.amazon.smithy.model.traits.StreamingTrait;
 import software.amazon.smithy.model.traits.UnitTypeTrait;
+import software.amazon.smithy.utils.CaseUtils;
 
 /**
  * Maps Smithy types to Java Symbols
@@ -187,6 +188,33 @@ public class JavaSymbolProvider implements ShapeVisitor<Symbol>, SymbolProvider 
 
     @Override
     public Symbol memberShape(MemberShape memberShape) {
+        var container = model.getShape(memberShape.getContainer())
+                .orElseThrow(
+                        () -> new CodegenException(
+                                "Could not find shape " + memberShape.getContainer() + " containing "
+                                        + memberShape));
+        if (container.isEnumShape() || container.isIntEnumShape()) {
+            // Adds a property SymbolProperties.ENUM_VARIANT_CLASS_NAME containing the class name
+            // for each of the enum variants. The class name is created by converting the enum field
+            // name (typically UPPER_SNAKE_CASE like OPTION_ONE) to a class name (PascalCase like
+            // OptionOneType). The "Type" suffix avoids conflicts with java. If the resulting
+            // name conflicts with the enum class name the suffix value is added after "Type".
+            var memberName = CodegenUtils.toMemberName(memberShape, model);
+            var className = CaseUtils.toPascalCase(memberName) + "Type";
+            var targetName = CodegenUtils.getDefaultName(container, service);
+            if (targetName.equals(className)) {
+                className = className + "Value";
+            }
+            Symbol targetSymbol;
+            if (container.isEnumShape()) {
+                targetSymbol = CodegenUtils.fromClass(String.class);
+            } else {
+                targetSymbol = CodegenUtils.fromClass(Integer.class);
+            }
+            return targetSymbol.toBuilder()
+                    .putProperty(SymbolProperties.ENUM_VARIANT_CLASS_NAME, className)
+                    .build();
+        }
         var target = model.getShape(memberShape.getTarget())
                 .orElseThrow(
                         () -> new CodegenException(

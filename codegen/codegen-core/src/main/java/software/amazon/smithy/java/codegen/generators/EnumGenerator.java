@@ -27,7 +27,6 @@ import software.amazon.smithy.model.shapes.EnumShape;
 import software.amazon.smithy.model.shapes.IntEnumShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
-import software.amazon.smithy.utils.CaseUtils;
 import software.amazon.smithy.utils.SmithyInternalApi;
 
 @SmithyInternalApi
@@ -110,7 +109,8 @@ public final class EnumGenerator<T extends ShapeDirective<Shape, CodeGenerationC
             for (var member : shape.members()) {
                 writer.pushState(new EnumVariantSection(member));
                 var fieldName = symbolProvider.toMemberName(member);
-                var className = toClassName(fieldName);
+                var className =
+                        symbolProvider.toSymbol(member).expectProperty(SymbolProperties.ENUM_VARIANT_CLASS_NAME);
                 types.add(fieldName);
                 writer.putContext("fieldName", fieldName);
                 writer.putContext("className", className);
@@ -181,8 +181,8 @@ public final class EnumGenerator<T extends ShapeDirective<Shape, CodeGenerationC
             // Generate known enum variant classes
             for (var member : shape.members()) {
                 writer.pushState();
-                var fieldName = symbolProvider.toMemberName(member);
-                var className = toClassName(fieldName);
+                var className =
+                        symbolProvider.toSymbol(member).expectProperty(SymbolProperties.ENUM_VARIANT_CLASS_NAME);
                 var memberValue = enumValues.get(member.getMemberName());
 
                 var template = """
@@ -332,14 +332,5 @@ public final class EnumGenerator<T extends ShapeDirective<Shape, CodeGenerationC
         } else {
             throw new IllegalArgumentException("Expected Int enum or enum");
         }
-    }
-
-    /**
-     * Converts an enum field name (typically UPPER_SNAKE_CASE like OPTION_ONE)
-     * to a class name (PascalCase like OptionOneType). The "Type" suffix avoids
-     * conflicts with java.lang types like String, Boolean, etc.
-     */
-    private static String toClassName(String fieldName) {
-        return CaseUtils.toPascalCase(fieldName) + "Type";
     }
 }
