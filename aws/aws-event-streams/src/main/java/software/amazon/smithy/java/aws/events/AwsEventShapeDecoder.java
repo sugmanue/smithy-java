@@ -22,6 +22,7 @@ import software.amazon.smithy.java.core.serde.SpecificShapeDeserializer;
 import software.amazon.smithy.java.core.serde.event.EventDecoder;
 import software.amazon.smithy.java.core.serde.event.EventStream;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
+import software.amazon.smithy.java.core.serde.event.EventStreamingProtocolException;
 
 /**
  * A decoder for AWS events
@@ -60,26 +61,18 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     private E decodeEvent(AwsEventFrame frame) {
         var message = frame.unwrap();
         var messageType = getMessageType(message);
-        switch (messageType) {
-            case "error" -> {
-                decodeErrorAndThrow(message);
-                return null;
-            }
-            case "event" -> {
-                var eventType = getEventType(message);
-                return decodePayload(eventType, message);
-            }
-            case "exception" -> {
-                return decodeModeledException(message);
-            }
-            default -> throw new IllegalStateException(String.format("Unknown message type: %s", messageType));
-        }
+        return switch (messageType) {
+            case "error" -> throw decodeError(message);
+            case "event" -> decodePayload(getEventType(message), message);
+            case "exception" -> decodeModeledException(message);
+            default -> throw new IllegalStateException("Unknown message type: " + messageType);
+        };
     }
 
     private E decodeModeledException(Message message) {
         var exceptionTypeHeader = message.getHeaders().get(":exception-type");
         if (exceptionTypeHeader == null) {
-            throw new IllegalStateException("expected headers to have ':exception-type' header");
+            throw new EventStreamingProtocolException("expected headers to have ':exception-type' header");
         }
         var exceptionType = exceptionTypeHeader.getString();
         return decodePayload(exceptionType, message);
@@ -88,7 +81,7 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     private E decodePayload(String eventType, Message message) {
         var memberSchema = eventSchema.member(eventType);
         if (memberSchema == null) {
-            throw new IllegalArgumentException("Unsupported event type: " + eventType);
+            throw new EventStreamingProtocolException("Unsupported event type: " + eventType);
         }
         var codecDeserializer = codec.createDeserializer(message.getPayload());
         var headers = message.getHeaders();
@@ -101,18 +94,18 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
         return builder.build();
     }
 
-    private void decodeErrorAndThrow(Message message) {
+    private EventStreamingProtocolException decodeError(Message message) {
         var errorCodeHeader = message.getHeaders().get(":error-code");
         if (errorCodeHeader == null) {
-            throw new IllegalArgumentException("expected headers to have ':error-code' header");
+            return new EventStreamingProtocolException("expected headers to have ':error-code' header");
         }
         var errorCode = errorCodeHeader.getString();
         var errorMessageHeder = message.getHeaders().get(":error-message");
         if (errorMessageHeder == null) {
-            throw new IllegalArgumentException("expected headers to have ':error-message' header");
+            return new EventStreamingProtocolException("expected headers to have ':error-message' header");
         }
         var errorMessage = errorMessageHeder.getString();
-        throw new EventStreamingException(errorCode, errorMessage);
+        return new EventStreamingException(errorCode, errorMessage);
     }
 
     @Override

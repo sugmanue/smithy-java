@@ -5,15 +5,25 @@
 
 package software.amazon.smithy.java.core.serde.event;
 
-public class EventStreamingException extends RuntimeException {
+import java.util.Objects;
+
+/**
+ * Exception thrown upon receiving events of type :message-type exception.
+ */
+public final class EventStreamingException extends EventStreamingProtocolException {
 
     private final String errorCode;
 
     public EventStreamingException(String errorCode, String errorMessage) {
-        super(errorMessage);
-        this.errorCode = errorCode;
+        super(Objects.requireNonNull(errorMessage, "errorMessage"));
+        this.errorCode = Objects.requireNonNull(errorCode, "errorCode");
     }
 
+    /**
+     * Returns the error code of the exception.
+     *
+     * @return the error code of the exception
+     */
     public String getErrorCode() {
         return errorCode;
     }
