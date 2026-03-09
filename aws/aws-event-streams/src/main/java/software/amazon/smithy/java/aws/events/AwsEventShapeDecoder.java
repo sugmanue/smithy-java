@@ -60,15 +60,20 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     private E decodeEvent(AwsEventFrame frame) {
         var message = frame.unwrap();
         var messageType = getMessageType(message);
-        if ("error".equals(messageType)) {
-            decodeErrorAndThrow(message);
-        } else if ("exception".equals(messageType)) {
-            return decodeModeledException(message);
-        } else if (!"event".equals(messageType)) {
-            throw new IllegalArgumentException("Invalid message type: " + messageType);
+        switch (messageType) {
+            case "error" -> {
+                decodeErrorAndThrow(message);
+                return null;
+            }
+            case "event" -> {
+                var eventType = getEventType(message);
+                return decodePayload(eventType, message);
+            }
+            case "exception" -> {
+                return decodeModeledException(message);
+            }
+            default -> throw new IllegalStateException(String.format("Unknown message type: %s", messageType));
         }
-        var eventType = getEventType(message);
-        return decodePayload(eventType, message);
     }
 
     private E decodeModeledException(Message message) {
@@ -98,9 +103,15 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
 
     private void decodeErrorAndThrow(Message message) {
         var errorCodeHeader = message.getHeaders().get(":error-code");
-        var errorCode = errorCodeHeader != null ? errorCodeHeader.getString() : "unknown error code";
+        if (errorCodeHeader == null) {
+            throw new IllegalArgumentException("expected headers to have ':error-code' header");
+        }
+        var errorCode = errorCodeHeader.getString();
         var errorMessageHeder = message.getHeaders().get(":error-message");
-        var errorMessage = errorMessageHeder != null ? errorMessageHeder.getString() : "unknown error message";
+        if (errorMessageHeder == null) {
+            throw new IllegalArgumentException("expected headers to have ':error-message' header");
+        }
+        var errorMessage = errorMessageHeder.getString();
         throw new EventStreamingException(errorCode, errorMessage);
     }
 
