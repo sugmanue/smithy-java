@@ -70,11 +70,7 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     }
 
     private E decodeModeledException(Message message) {
-        var exceptionTypeHeader = message.getHeaders().get(":exception-type");
-        if (exceptionTypeHeader == null) {
-            throw new EventStreamingProtocolException("expected headers to have ':exception-type' header");
-        }
-        var exceptionType = exceptionTypeHeader.getString();
+        var exceptionType = expectHeader(message, ":exception-type").getString();
         return decodePayload(exceptionType, message);
     }
 
@@ -95,16 +91,8 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     }
 
     private EventStreamingProtocolException decodeError(Message message) {
-        var errorCodeHeader = message.getHeaders().get(":error-code");
-        if (errorCodeHeader == null) {
-            return new EventStreamingProtocolException("expected headers to have ':error-code' header");
-        }
-        var errorCode = errorCodeHeader.getString();
-        var errorMessageHeder = message.getHeaders().get(":error-message");
-        if (errorMessageHeder == null) {
-            return new EventStreamingProtocolException("expected headers to have ':error-message' header");
-        }
-        var errorMessage = errorMessageHeder.getString();
+        var errorCode = expectHeader(message, ":error-code").getString();
+        var errorMessage = expectHeader(message, ":error-message").getString();
         return new EventStreamingException(errorCode, errorMessage);
     }
 
@@ -117,8 +105,8 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
         var responseDeserializer = new InitialResponseDeserializer(publisherMember, eventStream);
         builder.deserialize(responseDeserializer);
         // Deserialize the rest of the members if any
-        var headers = message.getHeaders();
         var codecDeserializer = codec.createDeserializer(message.getPayload());
+        var headers = message.getHeaders();
         var deserializer = new EventStreamDeserializer(codecDeserializer, new HeadersDeserializer(headers));
         builder.deserialize(deserializer);
         return builder.build();
@@ -134,11 +122,19 @@ public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends
     }
 
     private String getMessageType(Message message) {
-        return message.getHeaders().get(":message-type").getString();
+        return expectHeader(message, ":message-type").getString();
     }
 
     private String getEventType(Message message) {
-        return message.getHeaders().get(":event-type").getString();
+        return expectHeader(message, ":event-type").getString();
+    }
+
+    private HeaderValue expectHeader(Message message, String headerName) {
+        var header = message.getHeaders().get(headerName);
+        if (header == null) {
+            throw new EventStreamingProtocolException("expected headers to have '" + headerName + "' header");
+        }
+        return header;
     }
 
     static class InitialResponseDeserializer extends SpecificShapeDeserializer {
