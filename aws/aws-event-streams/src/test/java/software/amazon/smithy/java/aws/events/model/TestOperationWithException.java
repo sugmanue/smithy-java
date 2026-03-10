@@ -17,11 +17,13 @@ import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.utils.SmithyGenerated;
 
 @SmithyGenerated
-public final class TestOperation implements ApiOperation<TestOperationInput, TestOperationOutput> {
+public final class TestOperationWithException
+        implements ApiOperation<TestOperationWithExceptionInput, TestOperationWithExceptionOutput> {
 
-    private static final TestOperation $INSTANCE = new TestOperation();
+    private static final TestOperationWithException $INSTANCE = new TestOperationWithException();
 
-    static final Schema $SCHEMA = Schema.createOperation(ShapeId.from("smithy.example.eventstreaming#TestOperation"));
+    static final Schema $SCHEMA =
+            Schema.createOperation(ShapeId.from("smithy.example.eventstreaming#TestOperationWithException"));
 
     public static final ShapeId $ID = $SCHEMA.id();
 
@@ -29,23 +31,23 @@ public final class TestOperation implements ApiOperation<TestOperationInput, Tes
 
     private static final List<ShapeId> SCHEMES = List.of(ShapeId.from("smithy.api#noAuth"));
 
-    private static final Schema INPUT_STREAM_MEMBER = TestOperationInput.$SCHEMA.member("stream");
-    private static final Schema OUTPUT_STREAM_MEMBER = TestOperationOutput.$SCHEMA.member("outputStream");
+    private static final Schema INPUT_STREAM_MEMBER = TestOperationWithExceptionInput.$SCHEMA.member("stream");
+    private static final Schema OUTPUT_STREAM_MEMBER = TestOperationWithExceptionOutput.$SCHEMA.member("outputStream");
 
     /**
      * Get an instance of this {@code ApiOperation}.
      *
      * @return An instance of this class.
      */
-    public static TestOperation instance() {
+    public static TestOperationWithException instance() {
         return $INSTANCE;
     }
 
-    private TestOperation() {}
+    private TestOperationWithException() {}
 
     @Override
-    public ShapeBuilder<TestOperationInput> inputBuilder() {
-        return TestOperationInput.builder();
+    public ShapeBuilder<TestOperationWithExceptionInput> inputBuilder() {
+        return TestOperationWithExceptionInput.builder();
     }
 
     @Override
@@ -54,13 +56,13 @@ public final class TestOperation implements ApiOperation<TestOperationInput, Tes
     }
 
     @Override
-    public ShapeBuilder<TestOperationOutput> outputBuilder() {
-        return TestOperationOutput.builder();
+    public ShapeBuilder<TestOperationWithExceptionOutput> outputBuilder() {
+        return TestOperationWithExceptionOutput.builder();
     }
 
     @Override
     public Supplier<ShapeBuilder<? extends SerializableStruct>> outputEventBuilderSupplier() {
-        return () -> TestEventStream.builder();
+        return () -> EventStreamWithError.builder();
     }
 
     @Override
@@ -70,12 +72,12 @@ public final class TestOperation implements ApiOperation<TestOperationInput, Tes
 
     @Override
     public Schema inputSchema() {
-        return TestOperationInput.$SCHEMA;
+        return TestOperationWithExceptionInput.$SCHEMA;
     }
 
     @Override
     public Schema outputSchema() {
-        return TestOperationOutput.$SCHEMA;
+        return TestOperationWithExceptionOutput.$SCHEMA;
     }
 
     @Override

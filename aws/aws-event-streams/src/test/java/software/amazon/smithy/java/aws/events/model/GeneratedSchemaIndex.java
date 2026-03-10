@@ -28,6 +28,10 @@ public final class GeneratedSchemaIndex extends SchemaIndex {
         SCHEMA_MAP.put(Schemas.TEST_EVENT_STREAM.id(), Schemas.TEST_EVENT_STREAM);
         SCHEMA_MAP.put(Schemas.TEST_OPERATION_INPUT.id(), Schemas.TEST_OPERATION_INPUT);
         SCHEMA_MAP.put(Schemas.TEST_OPERATION_OUTPUT.id(), Schemas.TEST_OPERATION_OUTPUT);
+        SCHEMA_MAP.put(Schemas.TEST_OPERATION_WITH_EXCEPTION_INPUT.id(), Schemas.TEST_OPERATION_WITH_EXCEPTION_INPUT);
+        SCHEMA_MAP.put(Schemas.MY_ERROR.id(), Schemas.MY_ERROR);
+        SCHEMA_MAP.put(Schemas.EVENT_STREAM_WITH_ERROR.id(), Schemas.EVENT_STREAM_WITH_ERROR);
+        SCHEMA_MAP.put(Schemas.TEST_OPERATION_WITH_EXCEPTION_OUTPUT.id(), Schemas.TEST_OPERATION_WITH_EXCEPTION_OUTPUT);
     }
 
     @Override

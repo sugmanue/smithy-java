@@ -17,8 +17,8 @@ import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.utils.SmithyGenerated;
 
 @SmithyGenerated
-public sealed interface TestEventStream extends SerializableStruct {
-    Schema $SCHEMA = Schemas.TEST_EVENT_STREAM;
+public sealed interface EventStreamWithError extends SerializableStruct {
+    Schema $SCHEMA = Schemas.EVENT_STREAM_WITH_ERROR;
 
     ShapeId $ID = $SCHEMA.id();
 
@@ -35,21 +35,21 @@ public sealed interface TestEventStream extends SerializableStruct {
     }
 
     @SmithyGenerated
-    record StructureMemberMember(StructureEvent structureMember) implements TestEventStream {
-        private static final Schema $SCHEMA_STRUCTURE_MEMBER = $SCHEMA.member("structureMember");
-        public StructureMemberMember {
-            Objects.requireNonNull(structureMember, "Union value cannot be null");
+    record ModeledErrorMemberMember(MyError modeledErrorMember) implements EventStreamWithError {
+        private static final Schema $SCHEMA_MODELED_ERROR_MEMBER = $SCHEMA.member("modeledErrorMember");
+        public ModeledErrorMemberMember {
+            Objects.requireNonNull(modeledErrorMember, "Union value cannot be null");
         }
 
         @Override
         public void serializeMembers(ShapeSerializer serializer) {
-            serializer.writeStruct($SCHEMA_STRUCTURE_MEMBER, structureMember);
+            serializer.writeStruct($SCHEMA_MODELED_ERROR_MEMBER, modeledErrorMember);
         }
 
         @Override
         @SuppressWarnings("unchecked")
-        public StructureEvent getValue() {
-            return structureMember;
+        public MyError getValue() {
+            return modeledErrorMember;
         }
 
         @Override
@@ -60,7 +60,7 @@ public sealed interface TestEventStream extends SerializableStruct {
     }
 
     @SmithyGenerated
-    record StringMemberMember(StringEvent stringMember) implements TestEventStream {
+    record StringMemberMember(StringEvent stringMember) implements EventStreamWithError {
         private static final Schema $SCHEMA_STRING_MEMBER = $SCHEMA.member("stringMember");
         public StringMemberMember {
             Objects.requireNonNull(stringMember, "Union value cannot be null");
@@ -84,82 +84,7 @@ public sealed interface TestEventStream extends SerializableStruct {
 
     }
 
-    @SmithyGenerated
-    record BlobMemberMember(BlobEvent blobMember) implements TestEventStream {
-        private static final Schema $SCHEMA_BLOB_MEMBER = $SCHEMA.member("blobMember");
-        public BlobMemberMember {
-            Objects.requireNonNull(blobMember, "Union value cannot be null");
-        }
-
-        @Override
-        public void serializeMembers(ShapeSerializer serializer) {
-            serializer.writeStruct($SCHEMA_BLOB_MEMBER, blobMember);
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public BlobEvent getValue() {
-            return blobMember;
-        }
-
-        @Override
-        public String toString() {
-            return ToStringSerializer.serialize(this);
-        }
-
-    }
-
-    @SmithyGenerated
-    record HeadersOnlyMemberMember(HeadersOnlyEvent headersOnlyMember) implements TestEventStream {
-        private static final Schema $SCHEMA_HEADERS_ONLY_MEMBER = $SCHEMA.member("headersOnlyMember");
-        public HeadersOnlyMemberMember {
-            Objects.requireNonNull(headersOnlyMember, "Union value cannot be null");
-        }
-
-        @Override
-        public void serializeMembers(ShapeSerializer serializer) {
-            serializer.writeStruct($SCHEMA_HEADERS_ONLY_MEMBER, headersOnlyMember);
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public HeadersOnlyEvent getValue() {
-            return headersOnlyMember;
-        }
-
-        @Override
-        public String toString() {
-            return ToStringSerializer.serialize(this);
-        }
-
-    }
-
-    @SmithyGenerated
-    record BodyAndHeaderMemberMember(BodyAndHeaderEvent bodyAndHeaderMember) implements TestEventStream {
-        private static final Schema $SCHEMA_BODY_AND_HEADER_MEMBER = $SCHEMA.member("bodyAndHeaderMember");
-        public BodyAndHeaderMemberMember {
-            Objects.requireNonNull(bodyAndHeaderMember, "Union value cannot be null");
-        }
-
-        @Override
-        public void serializeMembers(ShapeSerializer serializer) {
-            serializer.writeStruct($SCHEMA_BODY_AND_HEADER_MEMBER, bodyAndHeaderMember);
-        }
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public BodyAndHeaderEvent getValue() {
-            return bodyAndHeaderMember;
-        }
-
-        @Override
-        public String toString() {
-            return ToStringSerializer.serialize(this);
-        }
-
-    }
-
-    record $Unknown(String memberName) implements TestEventStream {
+    record $Unknown(String memberName) implements EventStreamWithError {
         @Override
         public void serialize(ShapeSerializer serializer) {
             throw new UnsupportedOperationException("Cannot serialize union with unknown member " + this.memberName);
@@ -174,7 +99,7 @@ public sealed interface TestEventStream extends SerializableStruct {
             return memberName;
         }
 
-        private record $Hidden() implements TestEventStream {
+        private record $Hidden() implements EventStreamWithError {
             @Override
             public void serializeMembers(ShapeSerializer serializer) {}
 
@@ -187,7 +112,7 @@ public sealed interface TestEventStream extends SerializableStruct {
     }
 
     interface BuildStage {
-        TestEventStream build();
+        EventStreamWithError build();
     }
 
     /**
@@ -198,10 +123,10 @@ public sealed interface TestEventStream extends SerializableStruct {
     }
 
     /**
-     * Builder for {@link TestEventStream}.
+     * Builder for {@link EventStreamWithError}.
      */
-    final class Builder implements ShapeBuilder<TestEventStream>, BuildStage {
-        private TestEventStream value;
+    final class Builder implements ShapeBuilder<EventStreamWithError>, BuildStage {
+        private EventStreamWithError value;
 
         private Builder() {}
 
@@ -210,31 +135,19 @@ public sealed interface TestEventStream extends SerializableStruct {
             return $SCHEMA;
         }
 
-        public BuildStage structureMember(StructureEvent value) {
-            return setValue(new StructureMemberMember(value));
+        public BuildStage modeledErrorMember(MyError value) {
+            return setValue(new ModeledErrorMemberMember(value));
         }
 
         public BuildStage stringMember(StringEvent value) {
             return setValue(new StringMemberMember(value));
         }
 
-        public BuildStage blobMember(BlobEvent value) {
-            return setValue(new BlobMemberMember(value));
-        }
-
-        public BuildStage headersOnlyMember(HeadersOnlyEvent value) {
-            return setValue(new HeadersOnlyMemberMember(value));
-        }
-
-        public BuildStage bodyAndHeaderMember(BodyAndHeaderEvent value) {
-            return setValue(new BodyAndHeaderMemberMember(value));
-        }
-
         public BuildStage $unknownMember(String memberName) {
             return setValue(new $Unknown(memberName));
         }
 
-        private BuildStage setValue(TestEventStream value) {
+        private BuildStage setValue(EventStreamWithError value) {
             if (this.value != null) {
                 throw new IllegalArgumentException("Only one value may be set for unions");
             }
@@ -243,7 +156,7 @@ public sealed interface TestEventStream extends SerializableStruct {
         }
 
         @Override
-        public TestEventStream build() {
+        public EventStreamWithError build() {
             return Objects.requireNonNull(value, "no union value set");
         }
 
@@ -251,16 +164,10 @@ public sealed interface TestEventStream extends SerializableStruct {
         @SuppressWarnings("unchecked")
         public void setMemberValue(Schema member, Object value) {
             switch (member.memberIndex()) {
-                case 0 -> structureMember((StructureEvent) SchemaUtils
-                        .validateSameMember(StructureMemberMember.$SCHEMA_STRUCTURE_MEMBER, member, value));
+                case 0 -> modeledErrorMember((MyError) SchemaUtils
+                        .validateSameMember(ModeledErrorMemberMember.$SCHEMA_MODELED_ERROR_MEMBER, member, value));
                 case 1 -> stringMember((StringEvent) SchemaUtils
                         .validateSameMember(StringMemberMember.$SCHEMA_STRING_MEMBER, member, value));
-                case 2 -> blobMember((BlobEvent) SchemaUtils
-                        .validateSameMember(BlobMemberMember.$SCHEMA_BLOB_MEMBER, member, value));
-                case 3 -> headersOnlyMember((HeadersOnlyEvent) SchemaUtils
-                        .validateSameMember(HeadersOnlyMemberMember.$SCHEMA_HEADERS_ONLY_MEMBER, member, value));
-                case 4 -> bodyAndHeaderMember((BodyAndHeaderEvent) SchemaUtils
-                        .validateSameMember(BodyAndHeaderMemberMember.$SCHEMA_BODY_AND_HEADER_MEMBER, member, value));
                 default -> ShapeBuilder.super.setMemberValue(member, value);
             }
         }
@@ -284,13 +191,8 @@ public sealed interface TestEventStream extends SerializableStruct {
             @SuppressWarnings("unchecked")
             public void accept(Builder builder, Schema member, ShapeDeserializer de) {
                 switch (member.memberIndex()) {
-                    case 0 -> builder.structureMember(StructureEvent.builder().deserializeMember(de, member).build());
+                    case 0 -> builder.modeledErrorMember(MyError.builder().deserializeMember(de, member).build());
                     case 1 -> builder.stringMember(StringEvent.builder().deserializeMember(de, member).build());
-                    case 2 -> builder.blobMember(BlobEvent.builder().deserializeMember(de, member).build());
-                    case 3 ->
-                        builder.headersOnlyMember(HeadersOnlyEvent.builder().deserializeMember(de, member).build());
-                    case 4 ->
-                        builder.bodyAndHeaderMember(BodyAndHeaderEvent.builder().deserializeMember(de, member).build());
                     default -> throw new IllegalArgumentException("Unexpected member: " + member.memberName());
                 }
             }

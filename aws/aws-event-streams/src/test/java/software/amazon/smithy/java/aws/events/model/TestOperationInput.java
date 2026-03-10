@@ -175,9 +175,8 @@ public final class TestOperationInput implements SerializableStruct {
                 case 0 -> headerString((String) SchemaUtils.validateSameMember($SCHEMA_HEADER_STRING, member, value));
                 case 1 -> inputStringMember(
                         (String) SchemaUtils.validateSameMember($SCHEMA_INPUT_STRING_MEMBER, member, value));
-                case 2 ->
-                    stream((EventStream<TestEventStream>) SchemaUtils
-                            .validateSameMember($SCHEMA_STREAM, member, value));
+                case 2 -> stream(
+                        (EventStream<TestEventStream>) SchemaUtils.validateSameMember($SCHEMA_STREAM, member, value));
                 default -> ShapeBuilder.super.setMemberValue(member, value);
             }
         }
@@ -198,6 +197,7 @@ public final class TestOperationInput implements SerializableStruct {
             private static final $InnerDeserializer INSTANCE = new $InnerDeserializer();
 
             @Override
+            @SuppressWarnings("unchecked")
             public void accept(Builder builder, Schema member, ShapeDeserializer de) {
                 switch (member.memberIndex()) {
                     case 0 -> builder.headerString(de.readString(member));

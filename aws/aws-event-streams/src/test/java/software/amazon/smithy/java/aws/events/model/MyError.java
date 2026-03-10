@@ -5,10 +5,9 @@
 
 package software.amazon.smithy.java.aws.events.model;
 
-import java.util.Objects;
+import software.amazon.smithy.java.core.error.ErrorFault;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SchemaUtils;
-import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
@@ -17,21 +16,20 @@ import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.utils.SmithyGenerated;
 
 @SmithyGenerated
-public final class StructureEvent implements SerializableStruct {
+public final class MyError extends EventStreamingTestServiceException {
 
-    public static final Schema $SCHEMA = Schemas.STRUCTURE_EVENT;
-    private static final Schema $SCHEMA_FOO = $SCHEMA.member("foo");
+    public static final Schema $SCHEMA = Schemas.MY_ERROR;
+    private static final Schema $SCHEMA_MESSAGE = $SCHEMA.member("message");
 
     public static final ShapeId $ID = $SCHEMA.id();
 
-    private final transient String foo;
-
-    private StructureEvent(Builder builder) {
-        this.foo = builder.foo;
-    }
-
-    public String getFoo() {
-        return foo;
+    private MyError(Builder builder) {
+        super($SCHEMA,
+                builder.message,
+                builder.$cause,
+                ErrorFault.CLIENT,
+                builder.$captureStackTrace,
+                builder.$deserialized);
     }
 
     @Override
@@ -40,31 +38,9 @@ public final class StructureEvent implements SerializableStruct {
     }
 
     @Override
-    public boolean equals(Object other) {
-        if (other == this) {
-            return true;
-        }
-        if (other == null || getClass() != other.getClass()) {
-            return false;
-        }
-        StructureEvent that = (StructureEvent) other;
-        return Objects.equals(this.foo, that.foo);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(foo);
-    }
-
-    @Override
-    public Schema schema() {
-        return $SCHEMA;
-    }
-
-    @Override
     public void serializeMembers(ShapeSerializer serializer) {
-        if (foo != null) {
-            serializer.writeString($SCHEMA_FOO, foo);
+        if (getMessage() != null) {
+            serializer.writeString($SCHEMA_MESSAGE, getMessage());
         }
     }
 
@@ -72,7 +48,7 @@ public final class StructureEvent implements SerializableStruct {
     @SuppressWarnings("unchecked")
     public <T> T getMemberValue(Schema member) {
         return switch (member.memberIndex()) {
-            case 0 -> (T) SchemaUtils.validateSameMember($SCHEMA_FOO, member, foo);
+            case 0 -> (T) SchemaUtils.validateSameMember($SCHEMA_MESSAGE, member, getMessage());
             default -> throw new IllegalArgumentException("Attempted to get non-existent member: " + member.id());
         };
     }
@@ -82,11 +58,11 @@ public final class StructureEvent implements SerializableStruct {
      *
      * <p><strong>Note:</strong> This method performs only a shallow copy of the original properties.
      *
-     * @return a builder for {@link StructureEvent}.
+     * @return a builder for {@link MyError}.
      */
     public Builder toBuilder() {
         var builder = new Builder();
-        builder.foo(this.foo);
+        builder.message(getMessage());
         return builder;
     }
 
@@ -98,10 +74,13 @@ public final class StructureEvent implements SerializableStruct {
     }
 
     /**
-     * Builder for {@link StructureEvent}.
+     * Builder for {@link MyError}.
      */
-    public static final class Builder implements ShapeBuilder<StructureEvent> {
-        private String foo;
+    public static final class Builder implements ShapeBuilder<MyError> {
+        private String message;
+        private Throwable $cause;
+        private Boolean $captureStackTrace;
+        private boolean $deserialized;
 
         private Builder() {}
 
@@ -113,27 +92,43 @@ public final class StructureEvent implements SerializableStruct {
         /**
          * @return this builder.
          */
-        public Builder foo(String foo) {
-            this.foo = foo;
+        public Builder message(String message) {
+            this.message = message;
+            return this;
+        }
+
+        public Builder withStackTrace() {
+            this.$captureStackTrace = true;
+            return this;
+        }
+
+        public Builder withoutStackTrace() {
+            this.$captureStackTrace = false;
+            return this;
+        }
+
+        public Builder withCause(Throwable cause) {
+            this.$cause = cause;
             return this;
         }
 
         @Override
-        public StructureEvent build() {
-            return new StructureEvent(this);
+        public MyError build() {
+            return new MyError(this);
         }
 
         @Override
         @SuppressWarnings("unchecked")
         public void setMemberValue(Schema member, Object value) {
             switch (member.memberIndex()) {
-                case 0 -> foo((String) SchemaUtils.validateSameMember($SCHEMA_FOO, member, value));
+                case 0 -> message((String) SchemaUtils.validateSameMember($SCHEMA_MESSAGE, member, value));
                 default -> ShapeBuilder.super.setMemberValue(member, value);
             }
         }
 
         @Override
         public Builder deserialize(ShapeDeserializer decoder) {
+            this.$deserialized = true;
             decoder.readStruct($SCHEMA, this, $InnerDeserializer.INSTANCE);
             return this;
         }
@@ -151,7 +146,7 @@ public final class StructureEvent implements SerializableStruct {
             @SuppressWarnings("unchecked")
             public void accept(Builder builder, Schema member, ShapeDeserializer de) {
                 switch (member.memberIndex()) {
-                    case 0 -> builder.foo(de.readString(member));
+                    case 0 -> builder.message(de.readString(member));
                     default -> throw new IllegalArgumentException("Unexpected member: " + member.memberName());
                 }
             }
