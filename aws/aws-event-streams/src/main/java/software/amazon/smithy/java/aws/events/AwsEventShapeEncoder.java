@@ -16,7 +16,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.error.ModeledException;
@@ -31,7 +30,6 @@ import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
-import software.amazon.smithy.java.io.ByteBufferUtils;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
@@ -61,8 +59,8 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
     @Override
     public AwsEventFrame encode(SerializableStruct item) {
-        var typeHolder = new AtomicReference<String>();
-        var contentTypeHolder = new AtomicReference<>(payloadMediaType);
+        var typeHolder = new Holder<String>();
+        var contentTypeHolder = new Holder<>(payloadMediaType);
         var headers = HeadersBuilder.forEvent();
         var payload = encodeInput(item, headers, typeHolder, contentTypeHolder);
         headers.eventType(typeHolder.get());
@@ -80,7 +78,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                 && (exceptionSchema = possibleExceptions.get(me.schema().id())) != null) {
             var headers = HeadersBuilder.forException()
                     .exceptionType(exceptionSchema.memberName());
-            var contentTypeHolder = new AtomicReference<>(payloadMediaType);
+            var contentTypeHolder = new Holder<>(payloadMediaType);
             var payload = encodeModeledException(me, headers, contentTypeHolder);
             var contentType = contentTypeHolder.get();
             if (contentType != null) {
@@ -111,8 +109,8 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     private byte[] encodeInput(
             SerializableStruct item,
             HeadersBuilder headers,
-            AtomicReference<String> typeHolder,
-            AtomicReference<String> contentEncodingHolder
+            Holder<String> typeHolder,
+            Holder<String> contentEncodingHolder
     ) {
         var out = new ByteArrayOutputStream();
         var baseSerializer = createSerializer(out, codec, headers, contentEncodingHolder);
@@ -127,7 +125,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                 public void writeStruct(Schema schema, SerializableStruct struct) {
                     var memberName = schema.memberName();
                     if (possibleTypes.contains(memberName) &&
-                            typeHolder.compareAndSet(null, memberName)) {
+                            typeHolder.setIfAbsent(memberName)) {
                         baseSerializer.writeStruct(schema, struct);
                     }
                 }
@@ -144,7 +142,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     private byte[] encodeModeledException(
             ModeledException item,
             HeadersBuilder headers,
-            AtomicReference<String> contentEncodingHolder
+            Holder<String> contentEncodingHolder
     ) {
         var out = new ByteArrayOutputStream();
         var baseSerializer = createSerializer(out, codec, headers, contentEncodingHolder);
@@ -172,8 +170,9 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         var result = new HashMap<ShapeId, Schema>();
         for (var memberSchema : eventSchema.members()) {
             if (memberSchema.hasTrait(TraitKey.ERROR_TRAIT)) {
-                if (result.put(memberSchema.memberTarget().id(), memberSchema) != null) {
-                    throw new IllegalStateException("Duplicate key");
+                var targetId = memberSchema.memberTarget().id();
+                if (result.put(targetId, memberSchema) != null) {
+                    throw new IllegalStateException("Duplicate key: " + targetId);
                 }
             }
         }
@@ -184,7 +183,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             OutputStream out,
             Codec codec,
             HeadersBuilder headers,
-            AtomicReference<String> contentTypeHolder
+            Holder<String> contentTypeHolder
     ) {
         var eventSerializer = new EventHeaderSerializer(headers);
         return new EventSerializer(out, codec, eventSerializer, contentTypeHolder);
@@ -290,13 +289,13 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         private final OutputStream out;
         private final Codec codec;
         private final EventHeaderSerializer headerSerializer;
-        private final AtomicReference<String> contentTypeHolder;
+        private final Holder<String> contentTypeHolder;
 
         public EventSerializer(
                 OutputStream out,
                 Codec codec,
                 EventHeaderSerializer headerSerializer,
-                AtomicReference<String> contentTypeHolder
+                Holder<String> contentTypeHolder
         ) {
             this.out = out;
             this.codec = codec;
@@ -340,13 +339,13 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     static class EventPayloadSerializer extends InterceptingSerializer {
         private final OutputStream out;
         private final Codec codec;
-        private final AtomicReference<String> contentEncodingHolder;
+        private final Holder<String> contentTypeHolder;
         private ShapeSerializer codecSerializer;
 
-        EventPayloadSerializer(OutputStream out, Codec codec, AtomicReference<String> contentEncodingHolder) {
+        EventPayloadSerializer(OutputStream out, Codec codec, Holder<String> contentTypeHolder) {
             this.out = out;
             this.codec = codec;
-            this.contentEncodingHolder = contentEncodingHolder;
+            this.contentTypeHolder = contentTypeHolder;
         }
 
         @Override
@@ -355,9 +354,9 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                 case BLOB -> new SpecificShapeSerializer() {
                     @Override
                     public void writeBlob(Schema schema, ByteBuffer value) {
-                        contentEncodingHolder.set("application/octet-stream");
+                        contentTypeHolder.set("application/octet-stream");
                         try {
-                            out.write(ByteBufferUtils.getBytes(value));
+                            out.write(value.array(), value.arrayOffset() + value.position(), value.remaining());
                         } catch (IOException e) {
                             throw new SerializationException(e);
                         }
@@ -366,7 +365,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                 case STRING -> new SpecificShapeSerializer() {
                     @Override
                     public void writeString(Schema schema, String value) {
-                        contentEncodingHolder.set("text/plain");
+                        contentTypeHolder.set("text/plain");
                         try {
                             out.write(value.getBytes(StandardCharsets.UTF_8));
                         } catch (IOException e) {
