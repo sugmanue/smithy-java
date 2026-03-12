@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "plugins": {
+    "java-codegen": {
+      "service": "com.amazonaws.transcribestreaming#Transcribe",
+      "namespace": "software.amazon.smithy.java.example.transcribestreaming",
+      "protocol": "aws.protocols#restJson1",
+      "modes": ["client"]
+    }
+  }
+}

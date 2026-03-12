@@ -30,7 +30,7 @@ import software.amazon.smithy.java.core.serde.event.EventStreamingProtocolExcept
  * @param <E>  The type of the event
  * @param <IR> The type of the initial event
  */
-public final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends SerializableStruct>
+final class AwsEventShapeDecoder<E extends SerializableStruct, IR extends SerializableStruct>
         implements EventDecoder<AwsEventFrame> {
 
     private final InitialEventType initialEventType;
