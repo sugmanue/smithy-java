@@ -9,6 +9,7 @@ dependencies {
     smithyBuild("software.amazon.smithy.java:codegen-plugin:$smithyJavaVersion")
     smithyBuild("software.amazon.smithy.java:client-api:$smithyJavaVersion")
 
+    implementation("software.amazon.api.models:transcribe-streaming:1.0.7")
     implementation("software.amazon.smithy.java:aws-client-restjson:$smithyJavaVersion")
     implementation("software.amazon.smithy.java:client-core:$smithyJavaVersion")
     implementation("software.amazon.smithy.java:aws-sigv4:$smithyJavaVersion")
@@ -60,15 +61,6 @@ tasks {
     }
 }
 
-
-// Helps Intellij IDE's discover smithy models
-sourceSets {
-    main {
-        java {
-            srcDir("model")
-        }
-    }
-}
 
 repositories {
     mavenLocal()
