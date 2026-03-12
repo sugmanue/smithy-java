@@ -37,6 +37,8 @@ smithy-utils = { module = "software.amazon.smithy:smithy-utils", version.ref = "
 smithy-traitcodegen = { module = "software.amazon.smithy:smithy-trait-codegen", version.ref = "smithy" }
 smithy-rules = { module = "software.amazon.smithy:smithy-rules-engine", version.ref = "smithy" }
 smithy-aws-endpoints = { module = "software.amazon.smithy:smithy-aws-endpoints", version.ref = "smithy" }
+smithy-aws-smoke-test-model = { module = "software.amazon.smithy:smithy-aws-smoke-test-model", version.ref = "smithy" }
+smithy-aws-smoke-test-traits = { module = "software.amazon.smithy:smithy-smoke-test-traits", version.ref = "smithy" }
 
 # AWS SDK for Java V2 adapters.
 aws-sdk-retries-spi = {module = "software.amazon.awssdk:retries-spi", version.ref = "aws-sdk"}

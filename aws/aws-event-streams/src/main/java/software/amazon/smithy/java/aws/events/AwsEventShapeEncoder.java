@@ -6,15 +6,17 @@
 package software.amazon.smithy.java.aws.events;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
+import java.util.Set;
 import java.util.function.Function;
-import software.amazon.eventstream.HeaderValue;
 import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.Schema;
@@ -22,18 +24,20 @@ import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeUtils;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
+import software.amazon.smithy.java.core.serde.InterceptingSerializer;
+import software.amazon.smithy.java.core.serde.SerializationException;
 import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.model.shapes.ShapeId;
 
-public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
+final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
     private final InitialEventType initialEventType;
     private final Codec codec;
     private final String payloadMediaType;
-    private final Map<String, BiFunction<OutputStream, Map<String, HeaderValue>, ShapeSerializer>> possibleTypes;
+    private final Set<String> possibleTypes;
     private final Map<ShapeId, Schema> possibleExceptions;
     private final Function<Throwable, EventStreamingException> exceptionHandler;
 
@@ -48,7 +52,6 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         this.codec = Objects.requireNonNull(codec, "codec");
         this.payloadMediaType = Objects.requireNonNull(payloadMediaType, "payloadMediaType");
         this.possibleTypes = possibleTypes(Objects.requireNonNull(eventSchema, "eventSchema"),
-                codec,
                 initialEventType.value());
         this.possibleExceptions = possibleExceptions(Objects.requireNonNull(eventSchema, "eventSchema"));
         this.exceptionHandler = Objects.requireNonNull(exceptionHandler, "exceptionHandler");
@@ -56,48 +59,140 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
     @Override
     public AwsEventFrame encode(SerializableStruct item) {
-        var typeHolder = new AtomicReference<String>();
-        var headers = new HashMap<String, HeaderValue>();
-        var payload = encodeInput(item, typeHolder, headers);
-        headers.put(":message-type", HeaderValue.fromString("event"));
-        headers.put(":event-type", HeaderValue.fromString(typeHolder.get()));
-        headers.put(":content-type", HeaderValue.fromString(payloadMediaType));
-        return new AwsEventFrame(new Message(headers, payload));
+        var typeHolder = new Holder<String>();
+        var contentTypeHolder = new Holder<>(payloadMediaType);
+        var headers = HeadersBuilder.forEvent();
+        var payload = encodeInput(item, headers, typeHolder, contentTypeHolder);
+        headers.eventType(typeHolder.get());
+        var contentType = contentTypeHolder.get();
+        if (contentType != null) {
+            headers.contentType(contentTypeHolder.get());
+        }
+        return new AwsEventFrame(new Message(headers.build(), payload));
     }
 
+    @Override
+    public AwsEventFrame encodeFailure(Throwable exception) {
+        Schema exceptionSchema;
+        if (exception instanceof ModeledException me
+                && (exceptionSchema = possibleExceptions.get(me.schema().id())) != null) {
+            var headers = HeadersBuilder.forException()
+                    .exceptionType(exceptionSchema.memberName());
+            var contentTypeHolder = new Holder<>(payloadMediaType);
+            var payload = encodeModeledException(me, headers, contentTypeHolder);
+            var contentType = contentTypeHolder.get();
+            if (contentType != null) {
+                headers.contentType(contentTypeHolder.get());
+            }
+            return new AwsEventFrame(new Message(headers.build(), payload));
+        }
+        var es = exceptionHandler.apply(exception);
+        var headers = HeadersBuilder.forError()
+                .errorCode(es.getErrorCode())
+                .errorMessage(es.getMessage());
+        return new AwsEventFrame(new Message(headers.build(), new byte[0]));
+    }
+
+    /**
+     * Encodes the item event returning the bytes for the payload. The headers builder is also updated
+     * when a member is serialized in the headers.
+     *
+     * <p>
+     * The serialization captures the union member and sets its value in the `typeHolder` reference. This
+     * value is set in the `:event-type` header of the event.
+     *
+     * <p>
+     * The content type can change depending on the use of `@eventPayload` for blobs and string members. The
+     * contentEncodingHolder is updated to reflect this value. If nothing gets serialized to the payload,
+     * this reference is updated to `null` to signal the caller that the content-type should not be set.
+     */
     private byte[] encodeInput(
             SerializableStruct item,
-            AtomicReference<String> typeHolder,
-            Map<String, HeaderValue> headers
+            HeadersBuilder headers,
+            Holder<String> typeHolder,
+            Holder<String> contentEncodingHolder
     ) {
+        var out = new ByteArrayOutputStream();
+        var baseSerializer = createSerializer(out, codec, headers, contentEncodingHolder);
         if (isInitialRequest(item.schema())) {
             // The initial event is serialized fully instead of just a single member as for events.
             typeHolder.set(initialEventType.value());
-            var os = new ByteArrayOutputStream();
-            try (var baseSerializer = possibleTypes.get(initialEventType.value()).apply(os, headers)) {
-                ShapeUtils.withFilteredMembers(item.schema(), item, AwsEventShapeEncoder::excludeEventStreamMember)
-                        .serialize(baseSerializer);
-            }
-            return os.toByteArray();
-        }
-        var os = new ByteArrayOutputStream();
-        var serializer = new SpecificShapeSerializer() {
-            @Override
-            public void writeStruct(Schema schema, SerializableStruct struct) {
-                var memberName = schema.memberName();
-                if (possibleTypes.containsKey(memberName) &&
-                        typeHolder.compareAndSet(null, schema.memberName())) {
-                    try (var baseSerializer = possibleTypes.get(memberName).apply(os, headers)) {
+            ShapeUtils.withFilteredMembers(item.schema(), item, AwsEventShapeEncoder::excludeEventStreamMember)
+                    .serialize(baseSerializer);
+        } else {
+            var serializer = new SpecificShapeSerializer() {
+                @Override
+                public void writeStruct(Schema schema, SerializableStruct struct) {
+                    var memberName = schema.memberName();
+                    if (possibleTypes.contains(memberName) &&
+                            typeHolder.setIfAbsent(memberName)) {
                         baseSerializer.writeStruct(schema, struct);
                     }
                 }
-            }
-        };
-        item.serializeMembers(serializer);
-        return os.toByteArray();
+            };
+            item.serializeMembers(serializer);
+        }
+        return out.toByteArray();
     }
 
-    private boolean isInitialRequest(Schema schema) {
+    /**
+     * Encodes the item event returning the bytes for the payload. The headers builder is also updated
+     * when a member is serialized in the headers.
+     */
+    private byte[] encodeModeledException(
+            ModeledException item,
+            HeadersBuilder headers,
+            Holder<String> contentEncodingHolder
+    ) {
+        var out = new ByteArrayOutputStream();
+        var baseSerializer = createSerializer(out, codec, headers, contentEncodingHolder);
+        item.serialize(baseSerializer);
+        return out.toByteArray();
+    }
+
+    /**
+     * Returns the set of all the possible event types.
+     */
+    static Set<String> possibleTypes(Schema eventSchema, String initialEventType) {
+        var result = new HashSet<String>();
+        for (var memberSchema : eventSchema.members()) {
+            var memberName = memberSchema.memberName();
+            result.add(memberName);
+        }
+        result.add(initialEventType);
+        return Collections.unmodifiableSet(result);
+    }
+
+    /**
+     * Returns the mapping between shape id and schema for all possible modeled exceptions for this stream.
+     */
+    static Map<ShapeId, Schema> possibleExceptions(Schema eventSchema) {
+        var result = new HashMap<ShapeId, Schema>();
+        for (var memberSchema : eventSchema.members()) {
+            if (memberSchema.hasTrait(TraitKey.ERROR_TRAIT)) {
+                var targetId = memberSchema.memberTarget().id();
+                if (result.put(targetId, memberSchema) != null) {
+                    throw new IllegalStateException("Duplicate key: " + targetId);
+                }
+            }
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    static ShapeSerializer createSerializer(
+            OutputStream out,
+            Codec codec,
+            HeadersBuilder headers,
+            Holder<String> contentTypeHolder
+    ) {
+        var eventSerializer = new EventHeaderSerializer(headers);
+        return new EventSerializer(out, codec, eventSerializer, contentTypeHolder);
+    }
+
+    /**
+     * Returns true if the given schema is for the initial event type.
+     */
+    static boolean isInitialRequest(Schema schema) {
         for (var member : schema.members()) {
             if (isEventStreamMember(member)) {
                 return true;
@@ -106,146 +201,187 @@ public final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         return false;
     }
 
-    private static boolean excludeEventStreamMember(Schema schema) {
+    /**
+     * Returns true if the schema not the event stream member for the initial request.
+     */
+    static boolean excludeEventStreamMember(Schema schema) {
         return !isEventStreamMember(schema);
     }
 
-    private static boolean isEventStreamMember(Schema schema) {
+    /**
+     * Returns true if this is a event stream members.
+     */
+    static boolean isEventStreamMember(Schema schema) {
         if (schema.isMember() && schema.memberTarget().hasTrait(TraitKey.STREAMING_TRAIT)) {
             return true;
         }
         return false;
     }
 
-    @Override
-    public AwsEventFrame encodeFailure(Throwable exception) {
-        AwsEventFrame frame;
-        Schema exceptionSchema;
-        if (exception instanceof ModeledException me
-                && (exceptionSchema = possibleExceptions.get(me.schema().id())) != null) {
-            var headers = Map.of(
-                    ":message-type",
-                    HeaderValue.fromString("exception"),
-                    ":exception-type",
-                    HeaderValue.fromString(exceptionSchema.memberName()),
-                    ":content-type",
-                    HeaderValue.fromString(payloadMediaType));
-            var payload = codec.serialize(me);
-            var bytes = new byte[payload.remaining()];
-            payload.get(bytes);
-            frame = new AwsEventFrame(new Message(headers, bytes));
-        } else {
-            EventStreamingException es = exceptionHandler.apply(exception);
-            var headers = Map.of(
-                    ":message-type",
-                    HeaderValue.fromString("error"),
-                    ":error-code",
-                    HeaderValue.fromString(es.getErrorCode()),
-                    ":error-message",
-                    HeaderValue.fromString(es.getMessage()));
-            frame = new AwsEventFrame(new Message(headers, new byte[0]));
-        }
-        return frame;
-
-    }
-
-    static Map<String, BiFunction<OutputStream, Map<String, HeaderValue>, ShapeSerializer>> possibleTypes(
-            Schema eventSchema,
-            Codec codec,
-            String initialEventType
-    ) {
-        var result = new HashMap<String, BiFunction<OutputStream, Map<String, HeaderValue>, ShapeSerializer>>();
-        var factory = new EventShapeSerializerFactory(codec);
-        for (var memberSchema : eventSchema.members()) {
-            String memberName = memberSchema.memberName();
-            result.put(memberName, factory::createSerializer);
-        }
-        result.put(initialEventType, factory::createSerializer);
-        return Collections.unmodifiableMap(result);
-    }
-
-    static Map<ShapeId, Schema> possibleExceptions(Schema eventSchema) {
-        var result = new HashMap<ShapeId, Schema>();
-        for (var memberSchema : eventSchema.members()) {
-            if (memberSchema.hasTrait(TraitKey.ERROR_TRAIT)) {
-                if (result.put(memberSchema.memberTarget().id(), memberSchema) != null) {
-                    throw new IllegalStateException("Duplicate key");
-                }
+    /**
+     * Returns true if the schema have any members that ought to be serialized in
+     * the event payload.
+     */
+    static boolean hasPayloadMembers(Schema struct) {
+        for (var member : struct.members()) {
+            if (isPayloadMember(member)) {
+                return true;
             }
         }
-        return Collections.unmodifiableMap(result);
+        return false;
     }
 
-    static class EventShapeSerializerFactory {
-        private final Codec codec;
-
-        EventShapeSerializerFactory(Codec codec) {
-            this.codec = codec;
+    /**
+     * Returns true if the schema is a member that ought to be serialized in the
+     * event payload.
+     */
+    static boolean isPayloadMember(Schema member) {
+        if (isHeadersMember(member)) {
+            return false;
         }
-
-        public ShapeSerializer createSerializer(OutputStream out, Map<String, HeaderValue> headers) {
-            var eventSerializer = new EventHeaderSerializer(headers);
-            var baseSerializer = codec.createSerializer(out);
-            return new EventSerializer(eventSerializer, baseSerializer);
+        if (isEventStreamMember(member)) {
+            return false;
         }
+        if (isEventPayload(member)) {
+            return false;
+        }
+        return true;
     }
 
+    /**
+     * Returns true if the schema has a member that is directly serialized as the
+     * payload of the event. Such member has the `@eventPayload` trait attached.
+     */
+    static boolean hasEventPayloadMember(Schema struct) {
+        for (var member : struct.members()) {
+            if (member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if the schema is a member that is directly serialized as the
+     * payload of the event. This depends on the presence of the trait `@eventPayload`.
+     */
+    static boolean isEventPayload(Schema member) {
+        if (member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if the schema is a member that is serialized in the headers of the event.
+     * This depends on the presence of the trait `@eventHeader`.
+     */
+    static boolean isHeadersMember(Schema member) {
+        return member.hasTrait(TraitKey.EVENT_HEADER_TRAIT);
+    }
+
+    /**
+     * Serializes an event, class implements the logic to serialize into the headers,
+     * or the payload of the message depending on the presence of the event serialization
+     * traits.
+     */
     static class EventSerializer extends SpecificShapeSerializer {
+        private final OutputStream out;
+        private final Codec codec;
         private final EventHeaderSerializer headerSerializer;
-        private final ShapeSerializer baseSerializer;
+        private final Holder<String> contentTypeHolder;
 
-        public EventSerializer(EventHeaderSerializer headerSerializer, ShapeSerializer baseSerializer) {
+        public EventSerializer(
+                OutputStream out,
+                Codec codec,
+                EventHeaderSerializer headerSerializer,
+                Holder<String> contentTypeHolder
+        ) {
+            this.out = out;
+            this.codec = codec;
             this.headerSerializer = headerSerializer;
-            this.baseSerializer = baseSerializer;
+            this.contentTypeHolder = contentTypeHolder;
         }
 
         @Override
         public void writeStruct(Schema schema, SerializableStruct struct) {
             if (hasEventPayloadMember(schema)) {
-                ShapeUtils.withFilteredMembers(schema, struct, this::isEventPayload)
-                        .serializeMembers(baseSerializer);
-
+                try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
+                    ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isEventPayload)
+                            .serializeMembers(serializer);
+                }
             } else {
-                ShapeUtils.withFilteredMembers(schema, struct, this::isPayloadMember)
-                        .serialize(baseSerializer);
-            }
-            ShapeUtils.withFilteredMembers(schema, struct, this::isHeadersMember)
-                    .serialize(headerSerializer);
-        }
-
-        private boolean isPayloadMember(Schema schema) {
-            if (schema.hasTrait(TraitKey.EVENT_HEADER_TRAIT)) {
-                return false;
-            }
-            if (isEventStreamMember(schema)) {
-                return false;
-            }
-            return true;
-        }
-
-        private boolean isEventPayload(Schema schema) {
-            if (schema.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
-                return true;
-            }
-            return false;
-        }
-
-        private boolean hasEventPayloadMember(Schema schema) {
-            for (var member : schema.members()) {
-                if (member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
-                    return true;
+                if (hasPayloadMembers(schema)) {
+                    try (var serializer = codec.createSerializer(out)) {
+                        ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isPayloadMember)
+                                .serialize(serializer);
+                    }
+                } else {
+                    contentTypeHolder.set(null);
                 }
             }
-            return false;
+            ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isHeadersMember)
+                    .serialize(headerSerializer);
+        }
+    }
+
+    /**
+     * Serializes a member with the trait `@eventPayload` directly into the payload of the event.
+     * The following member types have special handling:
+     * <ul>
+     *     <li><b>blob</b> For blob members the non-encoded bytes are the payload of the event and the
+     *     event `:content-type` header is set to "application/octet-stream"</li>
+     *     <li><b>string</b> For string members the UTF-8 encoded bytes are the payload of the event and the
+     *     event `:content-type` header is set to "text/plain"</li>
+     *     <li>Any other is encoded with the underlying protocol and uses the content type defined for it</li>
+     * </ul>
+     */
+    static class EventPayloadSerializer extends InterceptingSerializer {
+        private final OutputStream out;
+        private final Codec codec;
+        private final Holder<String> contentTypeHolder;
+        private ShapeSerializer codecSerializer;
+
+        EventPayloadSerializer(OutputStream out, Codec codec, Holder<String> contentTypeHolder) {
+            this.out = out;
+            this.codec = codec;
+            this.contentTypeHolder = contentTypeHolder;
         }
 
-        private boolean isHeadersMember(Schema schema) {
-            return schema.hasTrait(TraitKey.EVENT_HEADER_TRAIT);
+        @Override
+        protected ShapeSerializer before(Schema schema) {
+            return switch (schema.type()) {
+                case BLOB -> new SpecificShapeSerializer() {
+                    @Override
+                    public void writeBlob(Schema schema, ByteBuffer value) {
+                        contentTypeHolder.set("application/octet-stream");
+                        try {
+                            out.write(value.array(), value.arrayOffset() + value.position(), value.remaining());
+                        } catch (IOException e) {
+                            throw new SerializationException(e);
+                        }
+                    }
+                };
+                case STRING -> new SpecificShapeSerializer() {
+                    @Override
+                    public void writeString(Schema schema, String value) {
+                        contentTypeHolder.set("text/plain");
+                        try {
+                            out.write(value.getBytes(StandardCharsets.UTF_8));
+                        } catch (IOException e) {
+                            throw new SerializationException(e);
+                        }
+                    }
+                };
+                default -> (codecSerializer = codec.createSerializer(out));
+            };
         }
 
         @Override
         public void flush() {
-            baseSerializer.flush();
+            if (codecSerializer != null) {
+                codecSerializer.flush();
+            }
         }
     }
 }

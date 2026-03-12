@@ -34,7 +34,7 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeInitialResponse() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+        var headers = HeadersBuilder.forEvent()
                 .eventType("initial-response")
                 .contentType("text/json")
                 .put("intMemberHeader", 123)
@@ -57,7 +57,7 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeHeadersOnlyMember() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+        var headers = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("headersOnlyMember")
                 .put("sequenceNum", 123)
@@ -81,7 +81,7 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeStructureMember() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+        var headers = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("structureMember")
                 .build();
@@ -104,7 +104,7 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeBodyAndHeaderMember() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+        var headers = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("bodyAndHeaderMember")
                 .put("intMember", 123)
@@ -131,7 +131,7 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeStringMember() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+        var headers = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("stringMember")
                 .build();
@@ -154,9 +154,8 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeExceptionMember() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
+        var headers = HeadersBuilder.forException()
                 .contentType("text/json")
-                .messageType("exception")
                 .exceptionType("modeledErrorMember")
                 .build();
         var message = new Message(headers, "{\"message\":\"Client exception\"}".getBytes(StandardCharsets.UTF_8));
@@ -179,8 +178,7 @@ class AwsEventShapeDecoderTest {
     @Test
     public void testDecodeError() {
         // Arrange
-        var headers = new AwsEventShapeEncoderTest.HeadersBuilder()
-                .messageType("error")
+        var headers = HeadersBuilder.forError()
                 .put(":error-code", "InternalFailure")
                 .put(":error-message", "An internal server error occurred")
                 .build();

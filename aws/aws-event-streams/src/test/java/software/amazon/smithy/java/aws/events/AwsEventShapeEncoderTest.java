@@ -7,10 +7,7 @@ package software.amazon.smithy.java.aws.events;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.util.HashMap;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
-import software.amazon.eventstream.HeaderValue;
 import software.amazon.smithy.java.aws.events.model.BodyAndHeaderEvent;
 import software.amazon.smithy.java.aws.events.model.HeadersOnlyEvent;
 import software.amazon.smithy.java.aws.events.model.MyError;
@@ -40,7 +37,7 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encode(event);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
+        var expectedHeaders = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("initial-request")
                 .put("headerString", "headerValue")
@@ -61,13 +58,12 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encode(event);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
-                .contentType("text/json")
+        var expectedHeaders = HeadersBuilder.forEvent()
                 .eventType("headersOnlyMember")
                 .put("sequenceNum", 123)
                 .build();
         assertEquals(expectedHeaders, result.unwrap().getHeaders());
-        assertEquals("{}", new String(result.unwrap().getPayload()));
+        assertEquals("", new String(result.unwrap().getPayload()));
     }
 
     @Test
@@ -82,7 +78,7 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encode(event);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
+        var expectedHeaders = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("structureMember")
                 .build();
@@ -105,7 +101,7 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encode(event);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
+        var expectedHeaders = HeadersBuilder.forEvent()
                 .contentType("text/json")
                 .eventType("bodyAndHeaderMember")
                 .put("intMember", 123)
@@ -126,12 +122,12 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encode(event);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
-                .contentType("text/json")
+        var expectedHeaders = HeadersBuilder.forEvent()
+                .contentType("text/plain")
                 .eventType("stringMember")
                 .build();
         assertEquals(expectedHeaders, result.unwrap().getHeaders());
-        assertEquals("\"hello world!\"", new String(result.unwrap().getPayload()));
+        assertEquals("hello world!", new String(result.unwrap().getPayload()));
     }
 
     @Test
@@ -144,9 +140,8 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encodeFailure(exception);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
+        var expectedHeaders = HeadersBuilder.forException()
                 .contentType("text/json")
-                .messageType("exception")
                 .exceptionType("modeledErrorMember")
                 .build();
         assertEquals(expectedHeaders, result.unwrap().getHeaders());
@@ -163,8 +158,7 @@ class AwsEventShapeEncoderTest {
         var result = encoder.encodeFailure(exception);
 
         // Assert
-        var expectedHeaders = new HeadersBuilder()
-                .messageType("error")
+        var expectedHeaders = HeadersBuilder.forError()
                 .put(":error-message", "Internal Server Error")
                 .put(":error-code", "InternalServerException")
                 .build();
@@ -185,45 +179,4 @@ class AwsEventShapeEncoderTest {
         return JsonCodec.builder().build();
     }
 
-    static class HeadersBuilder {
-        private final Map<String, HeaderValue> headers = new HashMap<>();
-
-        HeadersBuilder() {
-            headers.put(":message-type", HeaderValue.fromString("event"));
-        }
-
-        public HeadersBuilder messageType(String messageType) {
-            headers.put(":message-type", HeaderValue.fromString(messageType));
-            return this;
-        }
-
-        public HeadersBuilder contentType(String contentType) {
-            headers.put(":content-type", HeaderValue.fromString(contentType));
-            return this;
-        }
-
-        public HeadersBuilder eventType(String eventType) {
-            headers.put(":event-type", HeaderValue.fromString(eventType));
-            return this;
-        }
-
-        public HeadersBuilder exceptionType(String eventType) {
-            headers.put(":exception-type", HeaderValue.fromString(eventType));
-            return this;
-        }
-
-        public HeadersBuilder put(String name, String value) {
-            headers.put(name, HeaderValue.fromString(value));
-            return this;
-        }
-
-        public HeadersBuilder put(String name, int value) {
-            headers.put(name, HeaderValue.fromInteger(value));
-            return this;
-        }
-
-        public Map<String, HeaderValue> build() {
-            return headers;
-        }
-    }
 }
