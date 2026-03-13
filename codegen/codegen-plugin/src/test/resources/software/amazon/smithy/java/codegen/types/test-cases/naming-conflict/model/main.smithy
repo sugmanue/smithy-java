@@ -55,3 +55,7 @@ union UnionWithTypeMember {
 structure Map {}
 
 structure List {}
+
+structure Schema {
+    oneMember: String
+}

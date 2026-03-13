@@ -149,7 +149,7 @@ abstract class BuilderGenerator implements Runnable {
         var template = """
                 @Override
                 @SuppressWarnings("unchecked")
-                public void setMemberValue(Schema member, Object value) {
+                public void setMemberValue(${sdkSchema:N} member, ${object:N} value) {
                     switch (member.memberIndex()) {
                         ${memberSetters:C|}
                         default -> ${shapeBuilderClass:T}.super.setMemberValue(member, value);
@@ -157,6 +157,8 @@ abstract class BuilderGenerator implements Runnable {
                 }""";
         writer.putContext("memberSetters", writer.consumer(this::generateMemberValueSetters));
         writer.putContext("shapeBuilderClass", ShapeBuilder.class);
+        writer.putContext("sdkSchema", Schema.class);
+        writer.putContext("object", Object.class);
         writer.write(template);
     }
 
