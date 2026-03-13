@@ -15,7 +15,8 @@ import software.amazon.smithy.jmespath.JmespathExpression;
  *
  * <p><strong>Note:</strong>The input shape is optional, but the tested output must be nonnull.
  */
-public final class JMESPathBiPredicate implements BiPredicate<SerializableStruct, SerializableStruct> {
+public final class JMESPathBiPredicate<I extends SerializableStruct, O extends SerializableStruct>
+        implements BiPredicate<I, O> {
     private final JmespathExpression expression;
     private final String expected;
     private final Comparator comparator;
@@ -27,7 +28,7 @@ public final class JMESPathBiPredicate implements BiPredicate<SerializableStruct
     }
 
     @Override
-    public boolean test(SerializableStruct input, SerializableStruct output) {
+    public boolean test(I input, O output) {
         var value =
                 expression.accept(new InputOutputAwareJMESPathDocumentVisitor(Document.of(input), Document.of(output)));
         return value != null && comparator.compare(value, expected);
