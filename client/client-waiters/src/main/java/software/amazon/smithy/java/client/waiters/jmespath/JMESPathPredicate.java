@@ -13,7 +13,7 @@ import software.amazon.smithy.jmespath.JmespathExpression;
 /**
  * Tests the input and output of a client call against a JMESPath expression.
  */
-public final class JMESPathPredicate implements Predicate<SerializableStruct> {
+public final class JMESPathPredicate<O extends SerializableStruct> implements Predicate<O> {
     private final JmespathExpression expression;
     private final String expected;
     private final Comparator comparator;
@@ -25,7 +25,7 @@ public final class JMESPathPredicate implements Predicate<SerializableStruct> {
     }
 
     @Override
-    public boolean test(SerializableStruct output) {
+    public boolean test(O output) {
         var value = expression.accept(new InputOutputAwareJMESPathDocumentVisitor(null, Document.of(output)));
         return value != null && comparator.compare(value, expected);
     }
