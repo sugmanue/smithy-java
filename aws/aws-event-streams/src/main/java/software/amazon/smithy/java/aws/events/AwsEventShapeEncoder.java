@@ -32,6 +32,9 @@ import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
 import software.amazon.smithy.model.shapes.ShapeId;
 
+/**
+ * A encoder for AWS events.
+ */
 final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
     private final InitialEventType initialEventType;

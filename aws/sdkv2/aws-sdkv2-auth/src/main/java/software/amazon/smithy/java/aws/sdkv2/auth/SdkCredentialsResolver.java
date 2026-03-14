@@ -5,6 +5,7 @@
 
 package software.amazon.smithy.java.aws.sdkv2.auth;
 
+import java.util.Objects;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.smithy.java.auth.api.identity.IdentityResult;
@@ -12,7 +13,7 @@ import software.amazon.smithy.java.aws.auth.api.identity.AwsCredentialsIdentity;
 import software.amazon.smithy.java.aws.auth.api.identity.AwsCredentialsResolver;
 import software.amazon.smithy.java.context.Context;
 
-public class SdkCredentialsResolver implements AwsCredentialsResolver {
+public final class SdkCredentialsResolver implements AwsCredentialsResolver {
 
     /**
      * The underlying SDK v2 credentials provider that will be used to resolve AWS credentials.
@@ -26,7 +27,7 @@ public class SdkCredentialsResolver implements AwsCredentialsResolver {
      *                               Must not be null.
      */
     public SdkCredentialsResolver(AwsCredentialsProvider sdkCredentialsProvider) {
-        this.sdkCredentialsProvider = sdkCredentialsProvider;
+        this.sdkCredentialsProvider = Objects.requireNonNull(sdkCredentialsProvider, "sdkCredentialsProvider");
     }
 
     /**

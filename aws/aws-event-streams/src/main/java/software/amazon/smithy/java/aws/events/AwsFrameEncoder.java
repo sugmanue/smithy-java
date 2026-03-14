@@ -8,6 +8,9 @@ package software.amazon.smithy.java.aws.events;
 import java.nio.ByteBuffer;
 import software.amazon.smithy.java.core.serde.event.FrameEncoder;
 
+/**
+ * Encodes a {@link AwsEventFrame} into bytes.
+ */
 public final class AwsFrameEncoder implements FrameEncoder<AwsEventFrame> {
 
     @Override

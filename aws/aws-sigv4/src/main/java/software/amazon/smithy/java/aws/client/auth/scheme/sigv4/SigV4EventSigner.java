@@ -35,7 +35,7 @@ import software.amazon.smithy.java.io.ByteBufferUtils;
  *   <li>{@code :chunk-signature} - The binary signature for this frame</li>
  * </ul>
  */
-class SigV4EventSigner implements FrameProcessor<AwsEventFrame> {
+final class SigV4EventSigner implements FrameProcessor<AwsEventFrame> {
     private static final String ALGORITHM = "AWS4-HMAC-SHA256-PAYLOAD";
     private static final String HMAC_SHA_256 = "HmacSHA256";
     private static final String TERMINATOR = "aws4_request";

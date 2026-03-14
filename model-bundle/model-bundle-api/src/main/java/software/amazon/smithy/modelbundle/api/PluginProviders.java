@@ -8,7 +8,9 @@ package software.amazon.smithy.modelbundle.api;
 import java.util.HashMap;
 import java.util.Map;
 import software.amazon.smithy.java.core.serde.document.Document;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class PluginProviders {
     private final Map<String, BundlePluginFactory> providers;
 
