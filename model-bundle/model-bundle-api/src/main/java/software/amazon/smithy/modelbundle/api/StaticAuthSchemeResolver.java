@@ -16,7 +16,9 @@ import software.amazon.smithy.java.client.core.auth.scheme.AuthSchemeResolver;
 import software.amazon.smithy.java.client.core.auth.scheme.AuthSchemeResolverParams;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class StaticAuthSchemeResolver implements AuthSchemeResolver {
     static final StaticAuthSchemeResolver INSTANCE = new StaticAuthSchemeResolver();
     static final ShapeId CONFIGURED_AUTH = ShapeId.from("modelbundle#configuredAuth");

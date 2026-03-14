@@ -7,11 +7,13 @@ package software.amazon.smithy.modelbundle.api;
 
 import software.amazon.smithy.java.client.core.Client;
 import software.amazon.smithy.java.client.core.RequestOverrideConfig;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
 /**
  * A BundlePlugin applies the settings specified in a {@link software.amazon.smithy.modelbundle.api.model.SmithyBundle}
  * on a per-call basis.
  */
+@SmithyUnstableApi
 public interface BundlePlugin {
     /**
      * Applies the bundle-specific settings to a client call.

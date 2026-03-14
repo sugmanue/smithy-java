@@ -12,6 +12,9 @@ import software.amazon.eventstream.MessageDecoder;
 import software.amazon.smithy.java.core.serde.event.FrameDecoder;
 import software.amazon.smithy.java.core.serde.event.FrameProcessor;
 
+/**
+ * Decodes bytes into {@link AwsEventFrame}.
+ */
 public final class AwsFrameDecoder implements FrameDecoder<AwsEventFrame> {
     private final MessageDecoder decoder = new MessageDecoder();
     private final FrameProcessor<AwsEventFrame> frameProcessor;

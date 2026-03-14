@@ -8,10 +8,12 @@ package software.amazon.smithy.java.aws.sdkv2.shapes;
 import java.util.Objects;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
 /**
  * Provides protocol-specific conversions between Smithy documents and AWS SDK for Java V2 documents.
  */
+@SmithyUnstableApi
 public interface DocumentConverter {
     /**
      * Get a converter for the given protocol.

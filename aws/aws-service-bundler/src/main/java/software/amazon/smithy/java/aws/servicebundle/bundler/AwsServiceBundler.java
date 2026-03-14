@@ -35,7 +35,9 @@ import software.amazon.smithy.model.traits.EndpointTrait;
 import software.amazon.smithy.modelbundle.api.ModelBundler;
 import software.amazon.smithy.modelbundle.api.model.AdditionalInput;
 import software.amazon.smithy.modelbundle.api.model.SmithyBundle;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class AwsServiceBundler extends ModelBundler {
     private static final ShapeId ENDPOINT_TESTS = ShapeId.from("smithy.rules#endpointTests");
 

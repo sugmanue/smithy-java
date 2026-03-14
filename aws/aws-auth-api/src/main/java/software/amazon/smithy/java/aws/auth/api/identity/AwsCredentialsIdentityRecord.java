@@ -7,6 +7,9 @@ package software.amazon.smithy.java.aws.auth.api.identity;
 
 import java.time.Instant;
 
+/**
+ * Implementation of {@link AwsCredentialsIdentity}.
+ */
 record AwsCredentialsIdentityRecord(
         String accessKeyId,
         String secretAccessKey,

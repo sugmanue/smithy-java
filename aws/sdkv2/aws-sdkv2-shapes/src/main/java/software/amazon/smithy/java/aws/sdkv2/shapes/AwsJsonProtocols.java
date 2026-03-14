@@ -11,10 +11,12 @@ import software.amazon.smithy.aws.traits.protocols.RestJson1Trait;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.utils.SmithyInternalApi;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
 /**
  * Contains implementations of the built-in Smithy to/from Java SDK document protocol implementations.
  */
+@SmithyUnstableApi
 public enum AwsJsonProtocols implements DocumentConverter {
     /**
      * Converts AWS SDK documents using "aws.protocols#awsJson1_0".

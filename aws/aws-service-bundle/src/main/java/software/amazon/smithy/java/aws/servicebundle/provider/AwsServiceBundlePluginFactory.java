@@ -9,7 +9,9 @@ import software.amazon.smithy.awsmcp.model.AwsServiceMetadata;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.modelbundle.api.BundlePlugin;
 import software.amazon.smithy.modelbundle.api.BundlePluginFactory;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class AwsServiceBundlePluginFactory implements BundlePluginFactory {
     public AwsServiceBundlePluginFactory() {
 

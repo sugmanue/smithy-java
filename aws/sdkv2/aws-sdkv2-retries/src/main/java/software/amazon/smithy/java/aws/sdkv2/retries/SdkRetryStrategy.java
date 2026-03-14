@@ -6,6 +6,7 @@
 package software.amazon.smithy.java.aws.sdkv2.retries;
 
 import java.time.Duration;
+import java.util.Objects;
 import software.amazon.smithy.java.retries.api.AcquireInitialTokenRequest;
 import software.amazon.smithy.java.retries.api.AcquireInitialTokenResponse;
 import software.amazon.smithy.java.retries.api.RecordSuccessRequest;
@@ -21,12 +22,12 @@ import software.amazon.smithy.java.retries.api.TokenAcquisitionFailedException;
 /**
  * A Smithy retry strategy that uses a retry strategy from the AWS SDK for Java V2.
  */
-public class SdkRetryStrategy implements RetryStrategy {
+public final class SdkRetryStrategy implements RetryStrategy {
 
     private final software.amazon.awssdk.retries.api.RetryStrategy delegate;
 
     private SdkRetryStrategy(software.amazon.awssdk.retries.api.RetryStrategy delegate) {
-        this.delegate = delegate;
+        this.delegate = Objects.requireNonNull(delegate, "delegate");
     }
 
     /**
