@@ -19,7 +19,9 @@ import software.amazon.smithy.model.shapes.StructureShape;
 import software.amazon.smithy.model.traits.StreamingTrait;
 import software.amazon.smithy.modelbundle.api.model.ModelBundleVersion;
 import software.amazon.smithy.modelbundle.api.model.SmithyBundle;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class ModelBundles {
 
     private ModelBundles() {}

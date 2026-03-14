@@ -5,6 +5,9 @@
 
 package software.amazon.smithy.java.mcp.server;
 
+import software.amazon.smithy.utils.SmithyUnstableApi;
+
+@SmithyUnstableApi
 public abstract sealed class ProtocolVersion implements Comparable<ProtocolVersion>
         permits ProtocolVersion.UnknownVersion, ProtocolVersion.v2024_11_05, ProtocolVersion.v2025_03_26,
         ProtocolVersion.v2025_06_18 {

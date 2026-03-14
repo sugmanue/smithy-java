@@ -25,7 +25,9 @@ import software.amazon.smithy.java.json.JsonCodec;
 import software.amazon.smithy.java.logging.InternalLogger;
 import software.amazon.smithy.java.mcp.model.JsonRpcRequest;
 import software.amazon.smithy.java.mcp.model.JsonRpcResponse;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class StdioProxy extends McpServerProxy {
     private static final InternalLogger LOG = InternalLogger.getLogger(StdioProxy.class);
     private static final JsonCodec JSON_CODEC = JsonCodec.builder().build();

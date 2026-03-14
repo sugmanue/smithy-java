@@ -5,6 +5,9 @@
 
 package software.amazon.smithy.java.mcp.server;
 
+import software.amazon.smithy.utils.SmithyUnstableApi;
+
+@SmithyUnstableApi
 public interface ToolFilter {
 
     boolean allowTool(String mcpServerName, String toolName);

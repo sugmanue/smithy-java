@@ -23,7 +23,9 @@ import software.amazon.smithy.java.mcp.model.ListToolsResult;
 import software.amazon.smithy.java.mcp.model.PromptInfo;
 import software.amazon.smithy.java.mcp.model.ToolInfo;
 import software.amazon.smithy.model.shapes.ShapeType;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public abstract class McpServerProxy {
 
     private static final InternalLogger LOG = InternalLogger.getLogger(McpServerProxy.class);

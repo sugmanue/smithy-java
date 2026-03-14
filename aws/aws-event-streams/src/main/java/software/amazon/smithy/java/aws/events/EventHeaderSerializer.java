@@ -11,7 +11,7 @@ import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 
-class EventHeaderSerializer extends SpecificShapeSerializer {
+final class EventHeaderSerializer extends SpecificShapeSerializer {
     private final HeadersBuilder headers;
 
     public EventHeaderSerializer(HeadersBuilder headers) {
