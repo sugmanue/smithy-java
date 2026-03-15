@@ -27,9 +27,6 @@ sourceSets {
         java {
             srcDir("$generatedSrcDir/java")
         }
-        resources {
-            srcDir("$generatedSrcDir/resources")
-        }
     }
 }
 

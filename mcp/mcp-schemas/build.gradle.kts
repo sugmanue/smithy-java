@@ -69,7 +69,7 @@ val serviceFilesMerger =
             // Use hardcoded paths because of https://docs.gradle.org/8.14.3/userguide/configuration_cache.html#config_cache:requirements:disallowed_types
             val sourceServiceDirs =
                 listOf(
-                    File(projectDir, "build/smithyprojections/mcp-schemas/source/java-codegen/META-INF/services"),
+                    File(projectDir, "build/smithyprojections/mcp-schemas/source/java-codegen/resources/META-INF/services"),
                     File(projectDir, "build/smithyprojections/mcp-schemas/source/trait-codegen/META-INF/services"),
                 )
 
