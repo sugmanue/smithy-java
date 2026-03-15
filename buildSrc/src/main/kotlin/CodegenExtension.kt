@@ -23,8 +23,7 @@ fun Project.addGenerateSrcsTask(
     val taskOutput = layout.buildDirectory.dir(generatedDir).get()
     val sourceSets = project.the<SourceSetContainer>()
     sourceSets.named("it") {
-        java.srcDirs("${taskOutput}/java", "${taskOutput}/resources")
-
+        java.srcDirs("${taskOutput}/resources", "${taskOutput}/java")
     }
     val task = tasks.register<JavaExec>(taskName) {
         dependsOn("test")
