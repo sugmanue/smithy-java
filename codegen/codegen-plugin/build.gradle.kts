@@ -51,13 +51,7 @@ sourceSets {
     it {
         // Add test plugin to classpath
         compileClasspath += sourceSets["test"].output
-        resources.srcDir("${layout.buildDirectory.get()}/generated-src/resources")
     }
-}
-
-tasks.named<ProcessResources>("processItResources") {
-    dependsOn("generateSources", "generateSourcesClient")
-    from("${layout.buildDirectory.get()}/generated-src-Client/resources")
 }
 
 // Ensure generate tasks that use it source set resources depend on base generateSources
