@@ -110,7 +110,7 @@ abstract sealed class AwsJsonProtocol extends HttpClientProtocol permits AwsJson
             HttpRequest request,
             HttpResponse response
     ) {
-        // TODO Is it an error?
+        // Is it an error?
         if (response.statusCode() != 200) {
             throw errorDeserializer.createError(context, operation, typeRegistry, response);
         }
