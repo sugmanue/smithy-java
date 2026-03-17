@@ -28,7 +28,7 @@ import software.amazon.smithy.java.http.api.HttpResponse;
 /**
  * Interceptor to instrument calls to emit metrics using OpenTelemetry.
  */
-class OperationMetricsInterceptor implements ClientInterceptor {
+final class OperationMetricsInterceptor implements ClientInterceptor {
     static final Context.Key<MetricsState> STATE = Context.key("smithy.operation.metrics.state");
     static final AttributeKey<String> RPC_SERVICE = AttributeKey.stringKey("rpc.service");
     static final AttributeKey<String> RPC_METHOD = AttributeKey.stringKey("rpc.method");

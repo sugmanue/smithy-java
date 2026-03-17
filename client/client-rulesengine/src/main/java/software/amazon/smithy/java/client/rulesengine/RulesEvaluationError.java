@@ -8,7 +8,7 @@ package software.amazon.smithy.java.client.rulesengine;
 /**
  * An error encountered while running the rules engine.
  */
-public class RulesEvaluationError extends RuntimeException {
+public final class RulesEvaluationError extends RuntimeException {
 
     private final int position;
 

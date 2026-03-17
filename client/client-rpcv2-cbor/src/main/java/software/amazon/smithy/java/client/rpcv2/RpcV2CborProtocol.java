@@ -40,6 +40,9 @@ import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.protocol.traits.Rpcv2CborTrait;
 
+/**
+ * Implements smithy.protocols#rpcv2Cbor.
+ */
 public final class RpcV2CborProtocol extends HttpClientProtocol {
     private static final Codec CBOR_CODEC = Rpcv2CborCodec.builder().build();
     private static final String PAYLOAD_MEDIA_TYPE = "application/cbor";
