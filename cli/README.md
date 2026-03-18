@@ -1,5 +1,8 @@
 ## smithy-call
 
+> [!WARNING]
+> This project is still in development and is not intended for use in production.
+
 This module contains the base-version of smithy-call: a CLI that uses ahead-of-time compilation and the dynamic client to make adhoc calls to services.
 
 
@@ -14,4 +17,3 @@ The functionality provided by this CLI includes:
 2. Start-up Cafe service from the end-to-end example: `./gradlew :examples:end-to-end:run`
 3. Check the available operations: `./cli/build/native/nativeCompile/smithy-call com.example#CoffeeShop --list-operations -m [LOCAL_PATH_TO_smithy-java_DIRECTORY]/examples/end-to-end/model`
 4. Send a test call to our Cafe service: `./cli/build/native/nativeCompile/smithy-call com.example#CoffeeShop GetMenu -m [LOCAL_PATH_TO_smithy-java_DIRECTORY]/examples/end-to-end/model --url http://localhost:8888`
-

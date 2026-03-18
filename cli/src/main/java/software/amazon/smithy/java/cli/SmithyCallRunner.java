@@ -6,7 +6,9 @@
 package software.amazon.smithy.java.cli;
 
 import picocli.CommandLine;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 public final class SmithyCallRunner {
     public static void main(String[] args) {
         int exitCode = new CommandLine(new SmithyCall())

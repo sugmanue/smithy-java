@@ -47,7 +47,9 @@ import software.amazon.smithy.model.shapes.OperationShape;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.utils.SmithyUnstableApi;
 
+@SmithyUnstableApi
 @Command(name = "smithy-call", mixinStandardHelpOptions = true, version = "1.0",
         description = "Smithy Call, send request to Smithy services using Smithy models")
 final class SmithyCall implements Callable<Integer> {
