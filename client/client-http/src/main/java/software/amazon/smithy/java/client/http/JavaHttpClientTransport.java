@@ -33,7 +33,7 @@ import software.amazon.smithy.java.logging.InternalLogger;
  * A client transport that uses Java's built-in {@link HttpClient} to send {@link HttpRequest} and return
  * {@link HttpResponse}.
  */
-public class JavaHttpClientTransport implements ClientTransport<HttpRequest, HttpResponse> {
+public final class JavaHttpClientTransport implements ClientTransport<HttpRequest, HttpResponse> {
 
     private static final URI DUMMY_URI = URI.create("http://localhost");
 

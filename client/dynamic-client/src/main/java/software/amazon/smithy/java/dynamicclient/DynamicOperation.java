@@ -28,6 +28,9 @@ import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ShapeType;
 
+/**
+ * Represents an operation called using the {@link DynamicClient} without any codegen.
+ */
 public final class DynamicOperation implements ApiOperation<StructDocument, StructDocument> {
 
     private final ApiService service;
