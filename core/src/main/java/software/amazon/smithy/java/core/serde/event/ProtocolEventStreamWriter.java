@@ -30,24 +30,34 @@ public sealed interface ProtocolEventStreamWriter<T extends SerializableStruct, 
     DataStream toDataStream();
 
     /**
-     * Bootstraps the writer providing the encoding factory to convert events
-     * to frames and frames to bytes, and the initial event that must be sent
-     * as the first event of the stream if the protocol requires one.
-     *
-     * <p>This method will be called using a proper data by the protocol serializer.
-     * Writes will be blocked until this method is called.
+     * Configures the writer with the given encoding factory to convert events
+     * to frames and frames to bytes.
      *
      * @param encoderFactory the event encoder factory to serialize events and encode to frames.
-     * @param initialEvent   the initial event, can be null if the protocol does not send the initial event in the stream
      */
-    void bootstrap(EventEncoderFactory<F> encoderFactory, IE initialEvent);
+    void setEventEncoderFactory(EventEncoderFactory<F> encoderFactory);
 
     /**
-     * Sets the frame processor to add authorization information to events in the stream
+     * Sets the initial event that must be sent as the first event of the stream if the protocol requires one.
      *
-     * @param eventSigner the signer to sign events in the stream
+     * @param initialEvent   the initial event, can be null if the protocol does not send the initial event in the stream
      */
-    void setFrameAuthorizer(FrameProcessor<F> eventSigner);
+    void setInitialEvent(IE initialEvent);
+
+    /**
+     * Adds a frame processor that can transform frames to implement logic such as signing for authorization.
+     *
+     * @param frameProcessor the signer to sign events in the stream
+     */
+    void addFrameProcessor(FrameProcessor<F> frameProcessor);
+
+    /**
+     * Activates the processor after finalizing its setup and allows writes to start. This method must be
+     * called after finalizing setting up the writer.
+     *
+     * <p>Note, writes will be blocked until this method is called.
+     */
+    void activate();
 
     /**
      * Utility method to convert a {@link EventStreamWriter} to a {@link ProtocolEventStreamWriter}.

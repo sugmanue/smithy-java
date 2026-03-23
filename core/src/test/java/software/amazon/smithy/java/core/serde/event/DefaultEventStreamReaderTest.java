@@ -52,8 +52,9 @@ class DefaultEventStreamReaderTest {
             TestMessage.TestFrame> createWriter() {
         var writer = new DefaultEventStreamWriter<TestMessage.TestEvent, TestMessage.TestEvent,
                 TestMessage.TestFrame>();
-        writer.bootstrap(new TestMessage.TestEventEncoderFactory(), null);
-        writer.setFrameAuthorizer(FrameProcessor.identity());
+        writer.setEventEncoderFactory(new TestMessage.TestEventEncoderFactory());
+        writer.addFrameProcessor(FrameProcessor.identity());
+        writer.activate();
         return writer;
     }
 }

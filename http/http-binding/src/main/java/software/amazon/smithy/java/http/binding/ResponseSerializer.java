@@ -183,7 +183,8 @@ public final class ResponseSerializer {
         if (eventStream != null && operation.outputEventBuilderSupplier() != null) {
             ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
                     ProtocolEventStreamWriter.of(eventStream);
-            writer.bootstrap(eventEncoderFactory, null);
+            writer.setEventEncoderFactory(eventEncoderFactory);
+            writer.activate();
             builder.body(writer.toDataStream());
             serializer.setContentType(eventEncoderFactory.contentType());
         } else if (serializer.hasBody()) {

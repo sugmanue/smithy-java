@@ -91,19 +91,24 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
     }
 
     @Override
-    public void bootstrap(EventEncoderFactory<F> encoderFactory, IE initialEvent) {
-        // Make sure that the protocol handler doesn't call bootstrap twice.
-        if (readyLatch.getCount() == 0) {
-            throw new IllegalStateException("bootstrap has been already called");
-        }
-        this.encoderFactory = encoderFactory;
-        this.initialEvent = initialEvent;
+    public void setEventEncoderFactory(EventEncoderFactory<F> encoderFactory) {
+        this.encoderFactory = Objects.requireNonNull(encoderFactory, "encoderFactory");
     }
 
     @Override
-    public void setFrameAuthorizer(FrameProcessor<F> eventSigner) {
-        this.encoderFactory = encoderFactory.withFrameProcessor(eventSigner);
-        setEventStreamEncodingFactory();
+    public void setInitialEvent(IE initialEvent) {
+        this.initialEvent = Objects.requireNonNull(initialEvent, "initialEvent");
+    }
+
+    @Override
+    public void addFrameProcessor(FrameProcessor<F> frameProcessor) {
+        this.encoderFactory =
+                encoderFactory.withFrameProcessor(Objects.requireNonNull(frameProcessor, "frameProcessor"));
+    }
+
+    @Override
+    public void activate() {
+        setEventStreamEncoders();
         writeInitialEvent(initialEvent);
     }
 
@@ -133,7 +138,7 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
      * Sets the event encoders from the factory used to get the event and frame encoders used
      * for encoding the events.
      */
-    private void setEventStreamEncodingFactory() {
+    private void setEventStreamEncoders() {
         this.eventEncoder = encoderFactory.newEventEncoder();
         this.frameEncoder = encoderFactory.newFrameEncoder();
         // No need to hold on to the reference, allow it to be garbage collected
