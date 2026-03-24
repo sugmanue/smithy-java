@@ -102,12 +102,20 @@ final class DefaultEventStreamWriter<IE extends SerializableStruct, T extends Se
 
     @Override
     public void addFrameProcessor(FrameProcessor<F> frameProcessor) {
+        if (this.encoderFactory == null) {
+            throw new IllegalStateException("encoderFactory is null. The encoder factory" +
+                    " has not been set or activate has been already called");
+        }
         this.encoderFactory =
                 encoderFactory.withFrameProcessor(Objects.requireNonNull(frameProcessor, "frameProcessor"));
     }
 
     @Override
     public void activate() {
+        if (this.encoderFactory == null) {
+            throw new IllegalStateException("encoderFactory is null. The encoder factory" +
+                    " has not been set or activate has been already called");
+        }
         setEventStreamEncoders();
         writeInitialEvent(initialEvent);
     }
