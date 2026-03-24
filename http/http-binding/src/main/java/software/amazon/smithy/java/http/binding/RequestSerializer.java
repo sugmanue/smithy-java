@@ -171,7 +171,7 @@ public final class RequestSerializer {
         if (eventStream != null && operation.inputEventBuilderSupplier() != null) {
             ProtocolEventStreamWriter<SerializableStruct, SerializableStruct, Frame<?>> writer =
                     ProtocolEventStreamWriter.of(eventStream);
-            writer.bootstrap((EventEncoderFactory) eventStreamEncodingFactory, null);
+            writer.setEventEncoderFactory((EventEncoderFactory) eventStreamEncodingFactory);
             builder.body(writer.toDataStream());
             serializer.setContentType(eventStreamEncodingFactory.contentType());
         } else if (serializer.hasBody()) {

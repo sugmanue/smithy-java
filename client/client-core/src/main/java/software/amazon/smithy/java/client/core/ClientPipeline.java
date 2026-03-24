@@ -200,7 +200,8 @@ final class ClientPipeline<RequestT, ResponseT> {
         req = signResult.signedRequest();
         if (call.eventStreamWriter != null) {
             var eventSigner = resolvedAuthScheme.eventSigner(signResult);
-            call.eventStreamWriter.setFrameAuthorizer(eventSigner);
+            call.eventStreamWriter.addFrameProcessor(eventSigner);
+            call.eventStreamWriter.activate();
         }
 
         var updatedHook = requestHook.withRequest(req);
