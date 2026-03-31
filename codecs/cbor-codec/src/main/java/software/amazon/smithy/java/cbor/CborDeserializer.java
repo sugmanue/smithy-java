@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import software.amazon.smithy.java.cbor.CborParser.Token;
 import software.amazon.smithy.java.core.schema.Schema;
+import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.SerializationException;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.document.Document;
@@ -357,6 +358,10 @@ final class CborDeserializer implements ShapeDeserializer {
     @Override
     public <T> void readStruct(Schema schema, T state, StructMemberConsumer<T> consumer) {
         byte token = parser.currentToken();
+        if (schema.hasTrait(TraitKey.UNIT_TYPE_TRAIT) && token == Token.FINISHED) {
+            // Empty input — treat as empty struct with no members.
+            return;
+        }
         if (token != Token.START_OBJECT) {
             throw badType("struct", token);
         }
