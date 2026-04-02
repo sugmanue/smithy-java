@@ -1,7 +1,8 @@
 ## smithy-call
 
 > [!WARNING]
-> This project is still in development and is not intended for use in production.
+> This is a developer-preview module and may contain bugs. No guarantee is made about API stability.
+> This module is not recommended for production use.
 
 This module contains the base-version of smithy-call: a CLI that uses ahead-of-time compilation and the dynamic client to make adhoc calls to services.
 
