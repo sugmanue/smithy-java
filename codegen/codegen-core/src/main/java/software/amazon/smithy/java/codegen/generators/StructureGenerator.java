@@ -5,6 +5,7 @@
 
 package software.amazon.smithy.java.codegen.generators;
 
+import java.io.Closeable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -18,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import software.amazon.smithy.codegen.core.Symbol;
 import software.amazon.smithy.codegen.core.SymbolProvider;
 import software.amazon.smithy.codegen.core.directed.ShapeDirective;
 import software.amazon.smithy.java.codegen.CodeGenerationContext;
@@ -35,6 +37,9 @@ import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.Model;
+import software.amazon.smithy.model.knowledge.EventStreamIndex;
+import software.amazon.smithy.model.knowledge.EventStreamInfo;
+import software.amazon.smithy.model.knowledge.OperationIndex;
 import software.amazon.smithy.model.node.ArrayNode;
 import software.amazon.smithy.model.node.BooleanNode;
 import software.amazon.smithy.model.node.Node;
@@ -80,6 +85,8 @@ public final class StructureGenerator<
         T extends ShapeDirective<StructureShape, CodeGenerationContext, JavaCodegenSettings>>
         implements Consumer<T> {
 
+    private EventStreamInfo eventStreamInfo;
+
     @Override
     public void accept(T directive) {
         if (directive.shape().hasTrait(UnitTypeTrait.class) || directive.symbol()
@@ -89,11 +96,12 @@ public final class StructureGenerator<
             return;
         }
         var shape = directive.shape();
+        setEventStreamInfo(directive.model(), shape);
         directive.context().writerDelegator().useShapeWriter(shape, writer -> {
             writer.pushState(new ClassSection(shape));
             var template =
                     """
-                            public final class ${shape:T} ${^isError}implements ${serializableStruct:T}${/isError}${?isError}extends ${sdkException:T}${/isError} {
+                            public final class ${shape:T}${classModifiers:C} {
 
                                 ${schemas:C|}
 
@@ -115,17 +123,25 @@ public final class StructureGenerator<
 
                                 ${getMemberValue:C|}
 
+                                ${?isCloseable}${close:C|}${/isCloseable}
+
                                 ${toBuilder:C|}
 
                                 ${builder:C|}
                             }
                             """;
-            writer.putContext("isError", shape.hasTrait(ErrorTrait.class));
-            writer.putContext("shape", directive.symbol());
-            writer.putContext("serializableStruct", SerializableStruct.class);
-
             var sdkError = CodegenUtils.tryGetServiceProperty(directive, SymbolProperties.SERVICE_EXCEPTION);
-            writer.putContext("sdkException", sdkError == null ? ModeledException.class : sdkError);
+            var isCloseable = eventStreamInfo != null;
+            writer.putContext("classModifiers",
+                    new ClassModifiers(writer,
+                            shape,
+                            sdkError,
+                            directive.symbolProvider(),
+                            directive.model(),
+                            isCloseable));
+            writer.putContext("isError", shape.hasTrait(ErrorTrait.class));
+            writer.putContext("isCloseable", isCloseable);
+            writer.putContext("shape", directive.symbol());
 
             writer.putContext("id", new IdStringGenerator(writer, shape));
             writer.putContext(
@@ -150,6 +166,7 @@ public final class StructureGenerator<
                     "hashCode",
                     new HashCodeGenerator(writer, shape, directive.symbolProvider(), directive.model()));
             writer.putContext("toString", new ToStringGenerator(writer));
+            writer.putContext("close", new CloseGenerator(writer, shape, directive.symbolProvider(), eventStreamInfo));
             writer.putContext(
                     "serializer",
                     new StructureSerializerGenerator(
@@ -168,11 +185,63 @@ public final class StructureGenerator<
                             directive.model(),
                             directive.service()));
             writer.putContext("getMemberValue", new GetMemberValueGenerator(writer, directive.symbolProvider(), shape));
+
             writer.putContext("toBuilder", new ToBuilderGenerator(writer, shape, directive.symbolProvider()));
             writer.writeNullMarkedAnnotation();
             writer.write(template);
             writer.popState();
         });
+    }
+
+    private void setEventStreamInfo(Model model, StructureShape shape) {
+        var operationIndex = OperationIndex.of(model);
+        var isInputStructure = operationIndex.isInputStructure(shape);
+        var isOutputStructure = operationIndex.isOutputStructure(shape);
+        if (!isInputStructure && !isOutputStructure) {
+            return;
+        }
+        var eventStreamIndex = EventStreamIndex.of(model);
+        if (isInputStructure) {
+            for (var op : operationIndex.getInputBindings(shape)) {
+                var inputInfo = eventStreamIndex.getInputInfo(op);
+                if (inputInfo.isPresent()) {
+                    this.eventStreamInfo = inputInfo.get();
+                    return;
+                }
+            }
+        }
+        if (isOutputStructure) {
+            for (var op : operationIndex.getOutputBindings(shape)) {
+                var outputInfo = eventStreamIndex.getOutputInfo(op);
+                if (outputInfo.isPresent()) {
+                    this.eventStreamInfo = outputInfo.get();
+                    return;
+                }
+            }
+        }
+    }
+
+    private record ClassModifiers(
+            JavaWriter writer,
+            Shape shape,
+            Symbol sdkError,
+            SymbolProvider symbolProvider,
+            Model model,
+            boolean isCloseable)
+            implements
+            Runnable {
+        @Override
+        public void run() {
+            if (shape.hasTrait(ErrorTrait.class)) {
+                writer.writeInline(" extends $T", sdkError == null ? ModeledException.class : sdkError);
+                return;
+            }
+            if (isCloseable) {
+                writer.writeInline(" implements $T, $T", SerializableStruct.class, Closeable.class);
+            } else {
+                writer.writeInline(" implements $T", SerializableStruct.class);
+            }
+        }
     }
 
     private record PropertyGenerator(JavaWriter writer, Shape shape, SymbolProvider symbolProvider, Model model)
@@ -481,6 +550,33 @@ public final class StructureGenerator<
             } else {
                 writer.writeInline("$T.hashCode($L)", Objects.class, memberName);
             }
+        }
+    }
+
+    private record CloseGenerator(
+            JavaWriter writer,
+            StructureShape shape,
+            SymbolProvider symbolProvider,
+            EventStreamInfo eventStreamInfo) implements Runnable {
+        @Override
+        public void run() {
+            var memberName = symbolProvider.toMemberName(eventStreamInfo.getEventStreamMember());
+
+            writer.pushState();
+            writer.putContext("memberName", memberName);
+            writer.write(
+                    """
+                            /**
+                             * Closes the underlying stream.
+                             */
+                            @Override
+                            public void close() {
+                                if (${memberName:L} != null) {
+                                    ${memberName:L}.close();
+                                }
+                            }
+                            """);
+            writer.popState();
         }
     }
 
