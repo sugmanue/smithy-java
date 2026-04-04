@@ -37,8 +37,6 @@ import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.io.datastream.DataStream;
 import software.amazon.smithy.model.Model;
-import software.amazon.smithy.model.knowledge.EventStreamIndex;
-import software.amazon.smithy.model.knowledge.EventStreamInfo;
 import software.amazon.smithy.model.knowledge.OperationIndex;
 import software.amazon.smithy.model.node.ArrayNode;
 import software.amazon.smithy.model.node.BooleanNode;
@@ -85,7 +83,7 @@ public final class StructureGenerator<
         T extends ShapeDirective<StructureShape, CodeGenerationContext, JavaCodegenSettings>>
         implements Consumer<T> {
 
-    private EventStreamInfo eventStreamInfo;
+    private MemberShape streamingMember;
 
     @Override
     public void accept(T directive) {
@@ -131,7 +129,7 @@ public final class StructureGenerator<
                             }
                             """;
             var sdkError = CodegenUtils.tryGetServiceProperty(directive, SymbolProperties.SERVICE_EXCEPTION);
-            var isCloseable = eventStreamInfo != null;
+            var isCloseable = streamingMember != null;
             writer.putContext("classModifiers",
                     new ClassModifiers(writer,
                             shape,
@@ -166,7 +164,7 @@ public final class StructureGenerator<
                     "hashCode",
                     new HashCodeGenerator(writer, shape, directive.symbolProvider(), directive.model()));
             writer.putContext("toString", new ToStringGenerator(writer));
-            writer.putContext("close", new CloseGenerator(writer, shape, directive.symbolProvider(), eventStreamInfo));
+            writer.putContext("close", new CloseGenerator(writer, shape, directive.symbolProvider(), streamingMember));
             writer.putContext(
                     "serializer",
                     new StructureSerializerGenerator(
@@ -194,29 +192,19 @@ public final class StructureGenerator<
     }
 
     private void setEventStreamInfo(Model model, StructureShape shape) {
+        if (!model.isTraitApplied(StreamingTrait.class)) {
+            return;
+        }
         var operationIndex = OperationIndex.of(model);
         var isInputStructure = operationIndex.isInputStructure(shape);
         var isOutputStructure = operationIndex.isOutputStructure(shape);
         if (!isInputStructure && !isOutputStructure) {
             return;
         }
-        var eventStreamIndex = EventStreamIndex.of(model);
-        if (isInputStructure) {
-            for (var op : operationIndex.getInputBindings(shape)) {
-                var inputInfo = eventStreamIndex.getInputInfo(op);
-                if (inputInfo.isPresent()) {
-                    this.eventStreamInfo = inputInfo.get();
-                    return;
-                }
-            }
-        }
-        if (isOutputStructure) {
-            for (var op : operationIndex.getOutputBindings(shape)) {
-                var outputInfo = eventStreamIndex.getOutputInfo(op);
-                if (outputInfo.isPresent()) {
-                    this.eventStreamInfo = outputInfo.get();
-                    return;
-                }
+        for (var member : shape.members()) {
+            var target = model.expectShape(member.getTarget());
+            if (target.hasTrait(StreamingTrait.class)) {
+                streamingMember = member;
             }
         }
     }
@@ -557,10 +545,10 @@ public final class StructureGenerator<
             JavaWriter writer,
             StructureShape shape,
             SymbolProvider symbolProvider,
-            EventStreamInfo eventStreamInfo) implements Runnable {
+            MemberShape streamingMember) implements Runnable {
         @Override
         public void run() {
-            var memberName = symbolProvider.toMemberName(eventStreamInfo.getEventStreamMember());
+            var memberName = symbolProvider.toMemberName(streamingMember);
 
             writer.pushState();
             writer.putContext("memberName", memberName);
