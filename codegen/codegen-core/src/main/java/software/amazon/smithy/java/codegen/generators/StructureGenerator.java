@@ -94,7 +94,7 @@ public final class StructureGenerator<
             return;
         }
         var shape = directive.shape();
-        setEventStreamInfo(directive.model(), shape);
+        setStreamingMember(directive.model(), shape);
         directive.context().writerDelegator().useShapeWriter(shape, writer -> {
             writer.pushState(new ClassSection(shape));
             var template =
@@ -183,7 +183,6 @@ public final class StructureGenerator<
                             directive.model(),
                             directive.service()));
             writer.putContext("getMemberValue", new GetMemberValueGenerator(writer, directive.symbolProvider(), shape));
-
             writer.putContext("toBuilder", new ToBuilderGenerator(writer, shape, directive.symbolProvider()));
             writer.writeNullMarkedAnnotation();
             writer.write(template);
@@ -191,7 +190,7 @@ public final class StructureGenerator<
         });
     }
 
-    private void setEventStreamInfo(Model model, StructureShape shape) {
+    private void setStreamingMember(Model model, StructureShape shape) {
         if (!model.isTraitApplied(StreamingTrait.class)) {
             return;
         }
