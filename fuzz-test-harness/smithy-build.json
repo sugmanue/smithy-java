@@ -3,7 +3,6 @@
   "plugins": {
     "java-codegen": {
       "namespace": "software.smithy.fuzz.test",
-      "useExternalTypes": true,
       "modes": ["types"]
     }
   }
