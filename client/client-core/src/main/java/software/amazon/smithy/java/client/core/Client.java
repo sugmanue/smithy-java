@@ -27,6 +27,8 @@ import software.amazon.smithy.java.core.serde.event.ProtocolEventStreamWriter;
 import software.amazon.smithy.java.endpoints.Endpoint;
 import software.amazon.smithy.java.endpoints.EndpointContext;
 import software.amazon.smithy.java.endpoints.EndpointResolver;
+import software.amazon.smithy.java.retries.StandardRetryStrategy;
+import software.amazon.smithy.java.retries.api.Claimable;
 import software.amazon.smithy.java.retries.api.RetryStrategy;
 import software.amazon.smithy.utils.SmithyInternalApi;
 
@@ -49,12 +51,13 @@ public abstract class Client implements Closeable {
         this.interceptor = config.interceptorChain();
         this.identityResolvers = IdentityResolvers.of(config.identityResolvers());
         this.typeRegistry = typeRegistry();
-
         if (config.retryStrategy() != null) {
             this.retryStrategy = config.retryStrategy();
         } else {
-            // TODO: Pick a better default retry strategy.
-            this.retryStrategy = RetryStrategy.noRetries();
+            this.retryStrategy = StandardRetryStrategy.create();
+        }
+        if (retryStrategy instanceof Claimable c) {
+            c.claim(this);
         }
     }
 

@@ -32,6 +32,7 @@ include(":framework-errors")
 include(":http:http-api")
 include(":http:http-binding")
 include(":retries-api")
+include(":retries")
 
 // Codecs
 include(":codecs:cbor-codec")

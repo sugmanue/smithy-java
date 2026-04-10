@@ -69,7 +69,7 @@ public class TestWaiters {
                 .build();
         var exc = assertThrows(
                 WaiterFailureException.class,
-                () -> waiter.wait(new GetFoosInput(ID), 10));
+                () -> waiter.wait(new GetFoosInput(ID), 5));
         assertNull(exc.getCause());
         assertTrue(exc.getMessage().contains("Waiter timed out after"));
     }
