@@ -8,7 +8,6 @@ package software.amazon.smithy.java.json;
 import java.time.Instant;
 import java.util.Objects;
 import software.amazon.smithy.java.core.schema.Schema;
-import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.SerializationException;
 import software.amazon.smithy.java.core.serde.TimestampFormatter;
 
@@ -87,12 +86,9 @@ public sealed interface TimestampResolver {
 
         @Override
         public TimestampFormatter resolve(Schema schema) {
-            var trait = schema.getTrait(TraitKey.TIMESTAMP_FORMAT_TRAIT);
-            if (trait != null) {
-                var formatter = TimestampFormatter.match(trait.getFormat());
-                if (formatter != null) {
-                    return formatter;
-                }
+            var ext = schema.getExtension(JsonSchemaExtensions.KEY);
+            if (ext != null && ext.timestampFormatter() != null) {
+                return ext.timestampFormatter();
             }
             return defaultFormat;
         }

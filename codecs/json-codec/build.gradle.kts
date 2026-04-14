@@ -2,6 +2,7 @@ plugins {
     id("smithy-java.module-conventions")
     id("smithy-java.fuzz-test")
     id("me.champeau.jmh") version "0.7.3"
+    id("software.amazon.smithy.gradle.smithy-base")
     alias(libs.plugins.shadow)
 }
 
@@ -13,7 +14,10 @@ extra["moduleName"] = "software.amazon.smithy.java.json"
 dependencies {
     api(project(":core"))
     compileOnly(libs.jackson.core)
+    compileOnly(libs.fastdoubleparser)
     testRuntimeOnly(libs.jackson.core)
+    testRuntimeOnly(libs.fastdoubleparser)
+    smithyBuild(project(":codegen:codegen-plugin"))
 }
 
 tasks {
@@ -29,7 +33,15 @@ tasks {
                         .toString(),
                 ),
             )
+            include(
+                dependency(
+                    libs.fastdoubleparser
+                        .get()
+                        .toString(),
+                ),
+            )
             relocate("tools.jackson.core", "software.amazon.smithy.java.internal.shaded.tools.jackson.core")
+            relocate("ch.randelshofer", "software.amazon.smithy.java.internal.shaded.ch.randelshofer")
         }
     }
     jar {
@@ -56,10 +68,53 @@ afterEvaluate {
     }
 }
 
+afterEvaluate {
+    val typePath = smithy.getPluginProjectionPath(smithy.sourceProjection.get(), "java-codegen").get()
+    sourceSets.named("jmh") {
+        java {
+            srcDir("$typePath/java")
+        }
+        resources {
+            srcDir("$typePath/resources")
+        }
+    }
+    sourceSets.named("test") {
+        java {
+            srcDir("$typePath/java")
+        }
+        resources {
+            srcDir("$typePath/resources")
+        }
+    }
+}
+
+tasks.named("compileJmhJava") {
+    dependsOn("smithyBuild")
+}
+
+tasks.named("compileTestJava") {
+    dependsOn("smithyBuild")
+}
+
+tasks.named("processJmhResources") {
+    dependsOn("smithyBuild")
+}
+
+tasks.named("processTestResources") {
+    dependsOn("smithyBuild")
+}
+
 jmh {
     warmupIterations = 3
-    iterations = 3
-    fork = 3
-    // profilers.add("async:output=flamegraph")
+    iterations = 5
+    fork = 1
+    jvmArgs.addAll("-Xms1g", "-Xmx1g")
+    includes.addAll(
+        providers
+            .gradleProperty("jmh.includes")
+            .map { listOf(it) }
+            .orElse(emptyList()),
+    )
+    profilers.add("async:output=jfr;dir=${layout.buildDirectory.get()}/jmh-profiler")
     // profilers.add("gc")
 }

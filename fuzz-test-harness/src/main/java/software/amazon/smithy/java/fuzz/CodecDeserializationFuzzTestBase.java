@@ -45,44 +45,55 @@ public abstract class CodecDeserializationFuzzTestBase {
                         Base64.getEncoder().encodeToString(input)));
     }
 
-    protected final void runTestsOn(byte[] input) throws Exception {
+    protected final void runTestsOn(byte[] input) {
         var shapeBuilders = getShapeBuilders();
+        var codec = this.codecToFuzz();
         for (var shapeBuilder : shapeBuilders) {
-            try (var codec = this.codecToFuzz()) {
+            try {
                 shapeBuilder.get().deserialize(codec.createDeserializer(input)).build();
             } catch (Exception e) {
-                isErrorAcceptable(e);
+                if (!isErrorAcceptable(e)) {
+                    var message = "Got an exception for Input : [%s] on shape [%s]"
+                            .formatted(Base64.getEncoder().encodeToString(input), shapeBuilder.get().schema().id());
+                    throw new RuntimeException(message, e);
+                }
             }
         }
     }
 
     private Stream<byte[]> seed() {
         var shapeBuilders = getShapeBuilders();
+        var codec = this.codecToFuzz();
         return shapeBuilders.stream()
                 .flatMap(b -> Stream.generate(() -> b).limit(10))
                 .map(Supplier::get)
                 .map(ShapeUtils::generateRandom)
-                .map(t -> {
-                    try (var codec = this.codecToFuzz()) {
-                        return codec.serialize(t);
-                    }
-                })
+                .map(codec::serialize)
                 .map(ByteBufferUtils::getBytes);
     }
 
+    /**
+     * Returns the codec to fuzz.
+     */
     protected abstract Codec codecToFuzz();
 
     @SuppressFBWarnings("DCN_NULLPOINTER_EXCEPTION")
-    protected boolean isErrorAcceptable(Exception exception) throws Exception {
+    protected boolean isErrorAcceptable(Exception exception) {
         try {
             throw exception;
+        } catch (NullPointerException npe) {
+            return switch (npe.getMessage()) {
+                case "no union value set" -> true;
+                case null, default -> false;
+            };
         } catch (SerializationException
                 | IllegalArgumentException
                 | IllegalStateException
                 | UnsupportedOperationException
-                | IndexOutOfBoundsException
-                | NullPointerException ignored) {
+                | IndexOutOfBoundsException ignored) {
             return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

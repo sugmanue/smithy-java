@@ -6,9 +6,12 @@
 package software.amazon.smithy.java.core.schema;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -68,6 +71,12 @@ public abstract sealed class Schema implements MemberLookup
     private Schema mapKeyMember;
     private Schema mapValueMember;
 
+    private static final Object[] EMPTY_EXTENSIONS = new Object[0];
+    private static final Object NOT_COMPUTED = new Object();
+    private static final Object NULL_SENTINEL = new Object();
+    // Allocated eagerly (cheap sentinel-filled array), elements computed lazily per-key in getExtension().
+    private final Object[] extensions;
+
     final Supplier<ShapeBuilder<?>> shapeBuilder;
 
     final Class<?> shapeClass;
@@ -119,6 +128,7 @@ public abstract sealed class Schema implements MemberLookup
 
         // Only use the slow version of required member validation if there are > 64 required members.
 
+        this.extensions = createExtensionArray();
         this.hash = computeHash(this);
     }
 
@@ -155,6 +165,7 @@ public abstract sealed class Schema implements MemberLookup
         this.uniqueItemsConstraint = type == ShapeType.LIST && hasTrait(TraitKey.UNIQUE_ITEMS_TRAIT);
         this.hasRangeConstraint = builder.validationState.hasRangeConstraint();
 
+        this.extensions = createExtensionArray();
         this.hash = computeHash(this);
     }
 
@@ -446,6 +457,83 @@ public abstract sealed class Schema implements MemberLookup
     }
 
     /**
+     * Get extension data for the given key, computing it lazily on first access.
+     *
+     * <p>Uses a benign-race pattern: concurrent threads may compute the same key
+     * simultaneously, producing identical deterministic results. Array element access
+     * uses plain array access (benign-race pattern) — providers must ensure their
+     * return values are safely publishable (see {@link SchemaExtensionProvider}).
+     *
+     * @param key The extension key.
+     * @param <T> Extension data type.
+     * @return The extension data, or null if not set.
+     */
+    @SuppressWarnings("unchecked")
+    public final <T> T getExtension(SchemaExtensionKey<T> key) {
+        var ext = extensions;
+        if (key.id >= ext.length) {
+            return null;
+        }
+        // Plain array read (benign race). Safe because extension objects are immutable
+        // (records with final fields), and Java's final field semantics (JLS 17.5)
+        // guarantee visibility once the reference is seen. Worst case: redundant computation.
+        var value = ext[key.id];
+        if (value == NOT_COMPUTED) {
+            value = computeExtension(key, ext);
+        }
+        return value == NULL_SENTINEL ? null : (T) value;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private Object computeExtension(SchemaExtensionKey<?> key, Object[] ext) {
+        SchemaExtensionProvider provider = ExtensionInitializerHolder.PROVIDER_BY_KEY[key.id];
+        Object result;
+        if (provider == null) {
+            result = NULL_SENTINEL;
+        } else {
+            var value = provider.provide(this);
+            result = value != null ? value : NULL_SENTINEL;
+        }
+        // Plain array write (benign race). The stored object is immutable, so any thread
+        // that later reads this element and sees the object will see all its final fields.
+        ext[key.id] = result;
+        return result;
+    }
+
+    static Object[] createExtensionArray() {
+        int count = ExtensionInitializerHolder.PROVIDER_BY_KEY.length;
+        if (count == 0) {
+            return EMPTY_EXTENSIONS;
+        }
+        var ext = new Object[count];
+        Arrays.fill(ext, NOT_COMPUTED);
+        return ext;
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static final class ExtensionInitializerHolder {
+        static final SchemaExtensionProvider[] PROVIDER_BY_KEY;
+        static {
+            var loader = ServiceLoader
+                    .load(SchemaExtensionProvider.class, SchemaExtensionProvider.class.getClassLoader());
+            // Instantiate all providers first so their SchemaExtensionKey static fields
+            // are loaded before we call SchemaExtensionKey.count().
+            var providers = new ArrayList<SchemaExtensionProvider>();
+            for (var provider : loader) {
+                providers.add(provider);
+            }
+            if (providers.isEmpty()) {
+                PROVIDER_BY_KEY = new SchemaExtensionProvider[0];
+            } else {
+                PROVIDER_BY_KEY = new SchemaExtensionProvider[SchemaExtensionKey.count()];
+                for (var provider : providers) {
+                    PROVIDER_BY_KEY[provider.key().id] = provider;
+                }
+            }
+        }
+    }
+
+    /**
      * Gets the members of the schema.
      *
      * @return Returns the members.
@@ -469,7 +557,7 @@ public abstract sealed class Schema implements MemberLookup
     public final Schema listMember() {
         var result = listMember;
         if (result == null) {
-            listMember = result = members().get(0);
+            listMember = result = members().getFirst();
             if (!"member".equals(result.memberName)) {
                 throw new IllegalStateException("Expected list member, got " + result);
             }
@@ -487,7 +575,7 @@ public abstract sealed class Schema implements MemberLookup
     public final Schema mapKeyMember() {
         var result = mapKeyMember;
         if (result == null) {
-            mapKeyMember = result = members().get(0);
+            mapKeyMember = result = members().getFirst();
             if (!"key".equals(result.memberName)) {
                 throw new IllegalStateException("Expected map key member at position 0, got " + result);
             }

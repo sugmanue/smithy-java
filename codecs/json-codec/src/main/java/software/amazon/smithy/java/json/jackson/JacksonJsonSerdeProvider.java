@@ -18,20 +18,19 @@ import tools.jackson.core.ObjectReadContext;
 import tools.jackson.core.ObjectWriteContext;
 import tools.jackson.core.PrettyPrinter;
 import tools.jackson.core.StreamReadFeature;
-import tools.jackson.core.StreamWriteFeature;
 import tools.jackson.core.json.JsonFactory;
 import tools.jackson.core.util.DefaultPrettyPrinter;
+import tools.jackson.core.util.JsonRecyclerPools;
 
 @SmithyInternalApi
 public class JacksonJsonSerdeProvider implements JsonSerdeProvider {
 
     private static final JsonFactory FACTORY;
     private static final ObjectWriteContext PRETTY_PRINT_CONTEXT;
-    static final SerializedStringCache SERIALIZED_STRINGS = new SerializedStringCache();
 
     static {
         FACTORY = JsonFactory.builder()
-                .enable(StreamWriteFeature.USE_FAST_DOUBLE_WRITER)
+                .recyclerPool(JsonRecyclerPools.sharedBoundedPool())
                 .enable(StreamReadFeature.USE_FAST_DOUBLE_PARSER)
                 .enable(StreamReadFeature.USE_FAST_BIG_NUMBER_PARSER)
                 .build();

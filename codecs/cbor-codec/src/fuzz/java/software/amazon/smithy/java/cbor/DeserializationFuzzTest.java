@@ -8,9 +8,6 @@ package software.amazon.smithy.java.cbor;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.fuzz.CodecDeserializationFuzzTestBase;
 
-/**
- * Fuzz tests for Rpcv2CborCodec with various configurations.
- */
 class DeserializationFuzzTest {
 
     static class DefaultTest extends CodecDeserializationFuzzTestBase {
@@ -20,5 +17,4 @@ class DeserializationFuzzTest {
             return Rpcv2CborCodec.builder().build();
         }
     }
-
 }

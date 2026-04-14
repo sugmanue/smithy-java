@@ -9,9 +9,6 @@ import javax.xml.stream.XMLStreamException;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.fuzz.CodecDeserializationFuzzTestBase;
 
-/**
- * Fuzz tests for XmlCodec with various configurations.
- */
 class DeserializationFuzzTest {
 
     static class DefaultTest extends CodecDeserializationFuzzTestBase {
@@ -22,7 +19,7 @@ class DeserializationFuzzTest {
         }
 
         @Override
-        protected boolean isErrorAcceptable(Exception exception) throws Exception {
+        protected boolean isErrorAcceptable(Exception exception) {
             if (exception instanceof XMLStreamException
                     || exception.getCause() instanceof XMLStreamException) {
                 return true;
@@ -30,5 +27,4 @@ class DeserializationFuzzTest {
             return super.isErrorAcceptable(exception);
         }
     }
-
 }

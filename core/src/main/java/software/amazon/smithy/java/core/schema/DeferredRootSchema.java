@@ -63,17 +63,18 @@ final class DeferredRootSchema extends Schema {
             for (var builder : memberBuilders) {
                 memberList.add(builder.build());
             }
+
             int requiredMemberCount = SchemaBuilder.computeRequiredMemberCount(this.type(), memberBuilders);
             long requiredStructureMemberBitfield = SchemaBuilder.computeRequiredBitField(
                     type(),
                     requiredMemberCount,
                     memberBuilders,
                     m -> m.requiredByValidationBitmask);
+
             this.resolvedMembers = new ResolvedMembers(SchemaBuilder.createMembers(memberList),
                     memberList,
                     requiredMemberCount,
                     requiredStructureMemberBitfield);
-
         }
     }
 
