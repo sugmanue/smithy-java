@@ -14,5 +14,10 @@ package software.amazon.smithy.java.retries.api;
  *              attempts. All attempts with the same scope share the same token bucket within the same
  *              {@link RetryStrategy}, ensuring that token-bucket throttling for requests against one resource do not
  *              result in throttling for requests against other, unrelated resources.
+ * @param flags A bitmask of flags for the request. See {@link AcquireInitialTokenFlags} for available flags.
  */
-public record AcquireInitialTokenRequest(String scope) {}
+public record AcquireInitialTokenRequest(String scope, int flags) {
+    public AcquireInitialTokenRequest(String scope) {
+        this(scope, 0);
+    }
+}

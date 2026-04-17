@@ -14,6 +14,7 @@ dependencies {
     api(project(":auth-api"))
     api(project(":client:client-auth-api"))
     api(project(":retries-api"))
+    api(project(":retries"))
     api(project(":framework-errors"))
     implementation(project(":logging"))
 
