@@ -35,14 +35,14 @@ public final class AdaptiveRetryStrategy extends BaseRetryStrategy {
     @Override
     protected Duration computeInitialBackoff(AcquireInitialTokenRequest request) {
         var bucket = rateLimiterTokenBucketStore.tokenBucketForScope(request.scope());
-        return bucket.acquirePermit().delay();
+        return bucket.acquirePermit();
     }
 
     @Override
     protected Duration computeBackoff(RefreshRetryTokenRequest request, DefaultRetryToken token) {
         var backoff = super.computeBackoff(request, token);
         var bucket = rateLimiterTokenBucketStore.tokenBucketForScope(token.scope());
-        return backoff.plus(bucket.acquirePermit().delay());
+        return backoff.plus(bucket.acquirePermit());
     }
 
     @Override

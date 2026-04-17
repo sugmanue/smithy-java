@@ -56,6 +56,8 @@ public abstract class Client implements Closeable {
         } else {
             this.retryStrategy = StandardRetryStrategy.create();
         }
+        // Claim this strategy, if successful any other client that attempts to claim it
+        // will fail preventing sharing strategies among unrelated clients.
         if (retryStrategy instanceof Claimable c) {
             c.claim(this);
         }

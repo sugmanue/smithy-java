@@ -34,6 +34,7 @@ import software.amazon.smithy.java.logging.InternalLogger;
 import software.amazon.smithy.java.retries.api.AcquireInitialTokenRequest;
 import software.amazon.smithy.java.retries.api.RecordSuccessRequest;
 import software.amazon.smithy.java.retries.api.RefreshRetryTokenRequest;
+import software.amazon.smithy.java.retries.api.RetryInfo;
 import software.amazon.smithy.java.retries.api.RetryToken;
 import software.amazon.smithy.java.retries.api.TokenAcquisitionFailedException;
 
@@ -388,7 +389,8 @@ final class ClientPipeline<RequestT, ResponseT> {
         if (error != null && !call.isRetryDisallowed()) {
             try {
                 // If it's retryable, keep retrying and jump to step 8a.
-                var acquireRequest = new RefreshRetryTokenRequest(call.retryToken, error, null);
+                var suggestedDelay = (error instanceof RetryInfo i) ? i.retryAfter() : null;
+                var acquireRequest = new RefreshRetryTokenRequest(call.retryToken, error, suggestedDelay);
                 var acquireResult = call.retryStrategy.refreshRetryToken(acquireRequest);
                 return retry(call, request, acquireResult.token(), acquireResult.delay());
             } catch (TokenAcquisitionFailedException tafe) {

@@ -90,9 +90,6 @@ public final class SdkRetryStrategy implements RetryStrategy {
     public RefreshRetryTokenResponse refreshRetryToken(RefreshRetryTokenRequest request) {
         try {
             var suggestedDelay = request.suggestedDelay();
-            if (suggestedDelay == null && request.failure() instanceof RetryInfo info) {
-                suggestedDelay = info.retryAfter();
-            }
             var delegateRequest = software.amazon.awssdk.retries.api.RefreshRetryTokenRequest.builder()
                     .token(getDelegatedRetryToken(request.token()))
                     .failure(request.failure())

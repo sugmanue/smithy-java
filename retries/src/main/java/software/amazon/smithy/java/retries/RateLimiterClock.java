@@ -8,6 +8,7 @@ package software.amazon.smithy.java.retries;
 /**
  * A clock used by the rate limiter to measure elapsed time.
  */
+@FunctionalInterface
 interface RateLimiterClock {
     /**
      * Returns the current time in seconds with sub-second resolution. This clock needs not be related to the actual

@@ -12,9 +12,10 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * A store that manages {@link RateLimiterTokenBucket} instances per scope with LRU eviction.
+ *
+ * <p>This class is thread-safe.
  */
 final class RateLimiterTokenBucketStore {
-    private static final int DEFAULT_MAX_SCOPES = 128;
     private static final RateLimiterClock DEFAULT_CLOCK = new SystemClock();
     private final Map<String, RateLimiterTokenBucket> scopeToTokenBucket;
     private final RateLimiterClock clock;

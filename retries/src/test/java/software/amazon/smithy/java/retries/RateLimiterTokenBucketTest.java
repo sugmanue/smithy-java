@@ -29,12 +29,12 @@ class RateLimiterTokenBucketTest {
     @MethodSource("parameters")
     void testCase(TestCase testCase) {
         clock.setCurrent(testCase.givenTimestamp);
-        RateLimiterUpdateResponse res;
+        RateLimiterUpdateResult res = new RateLimiterUpdateResult();
         tokenBucket.acquirePermit();
         if (testCase.throttleResponse) {
-            res = tokenBucket.updateRateAfterThrottling();
+            tokenBucket.updateRateAfterThrottling(res);
         } else {
-            res = tokenBucket.updateRateAfterSuccess();
+            tokenBucket.updateRateAfterSuccess(res);
         }
         double measuredTxRate = res.measuredTxRate();
         assertThat(measuredTxRate).isCloseTo(testCase.expectMeasuredTxRate, within(EPSILON));

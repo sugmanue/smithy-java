@@ -8,6 +8,7 @@ package software.amazon.smithy.java.retries;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Objects;
+import software.amazon.smithy.java.retries.api.AcquireInitialTokenFlags;
 import software.amazon.smithy.java.retries.api.RetryToken;
 
 /**
@@ -15,7 +16,7 @@ import software.amazon.smithy.java.retries.api.RetryToken;
  */
 final class DefaultRetryToken implements RetryToken {
     private final String scope;
-    private final boolean isLongPolling;
+    private final int flags;
     private final int attempt;
     private final int capacityAcquired;
     private final int capacityRemaining;
@@ -23,11 +24,11 @@ final class DefaultRetryToken implements RetryToken {
 
     private DefaultRetryToken(Builder builder) {
         this.scope = Objects.requireNonNull(builder.scope, "scope");
-        this.isLongPolling = builder.isLongPolling;
+        this.flags = builder.flags;
         this.attempt = validateIsPositive(builder.attempt, "attempt");
         this.capacityAcquired = validateIsNotNegative(builder.capacityAcquired, "capacityAcquired");
         this.capacityRemaining = validateIsNotNegative(builder.capacityRemaining, "capacityRemaining");
-        this.failures = List.copyOf(builder.failures);
+        this.failures = builder.failures == null ? List.of() : List.copyOf(builder.failures);
     }
 
     /**
@@ -45,10 +46,17 @@ final class DefaultRetryToken implements RetryToken {
     }
 
     /**
+     * Returns the flags for this token.
+     */
+    int flags() {
+        return flags;
+    }
+
+    /**
      * Returns true if the token is configured for a long polling operation.
      */
     boolean isLongPolling() {
-        return isLongPolling;
+        return AcquireInitialTokenFlags.isLongPolling(flags);
     }
 
     /**
@@ -110,24 +118,21 @@ final class DefaultRetryToken implements RetryToken {
     static final class Builder {
         private static final int MAX_FAILURES = 10;
         private String scope;
-        private boolean isLongPolling;
+        private int flags;
         private int attempt = 1;
         private int capacityAcquired = 0;
         private int capacityRemaining = 0;
         private ArrayDeque<Throwable> failures;
 
-        Builder() {
-            this.failures = new ArrayDeque<>();
-            this.isLongPolling = false;
-        }
+        Builder() {}
 
         Builder(DefaultRetryToken token) {
             this.scope = token.scope;
             this.attempt = token.attempt;
             this.capacityAcquired = token.capacityAcquired;
             this.capacityRemaining = token.capacityRemaining;
-            this.isLongPolling = token.isLongPolling;
-            this.failures = new ArrayDeque<>(token.failures);
+            this.flags = token.flags;
+            this.failures = token.failures.isEmpty() ? null : new ArrayDeque<>(token.failures);
         }
 
         /**
@@ -139,10 +144,10 @@ final class DefaultRetryToken implements RetryToken {
         }
 
         /**
-         * Sets whether the operation is a long polling one.
+         * Sets the flags for this token.
          */
-        Builder isLongPolling(boolean isLongPolling) {
-            this.isLongPolling = isLongPolling;
+        Builder flags(int flags) {
+            this.flags = flags;
             return this;
         }
 
@@ -177,7 +182,9 @@ final class DefaultRetryToken implements RetryToken {
          */
         Builder addFailure(Throwable failure) {
             Objects.requireNonNull(failure, "failure");
-            if (this.failures.size() >= MAX_FAILURES) {
+            if (failures == null) {
+                failures = new ArrayDeque<>();
+            } else if (this.failures.size() >= MAX_FAILURES) {
                 this.failures.pollFirst();
             }
             this.failures.addLast(failure);

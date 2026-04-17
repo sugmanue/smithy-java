@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import software.amazon.smithy.java.retries.api.AcquireInitialTokenFlags;
 import software.amazon.smithy.java.retries.api.AcquireInitialTokenRequest;
 import software.amazon.smithy.java.retries.api.RecordSuccessRequest;
 import software.amazon.smithy.java.retries.api.RefreshRetryTokenRequest;
@@ -148,7 +149,7 @@ public class RetryStrategyTestCommon {
         final boolean expectSuccess;
         final Integer expectedCapacityAcquired;
         final Integer expectedCapacityRemaining;
-        final boolean isLongPolling;
+        final int flags;
 
         TestCase(TestCaseBuilder builder) {
             this.name = builder.name;
@@ -156,7 +157,7 @@ public class RetryStrategyTestCommon {
             this.expectSuccess = builder.expectSuccess;
             this.expectedCapacityAcquired = builder.expectedCapacityAcquired;
             this.expectedCapacityRemaining = builder.expectedCapacityRemaining;
-            this.isLongPolling = builder.isLongPolling;
+            this.flags = builder.flags;
         }
 
         public void run(BaseRetryStrategy strategy) {
@@ -166,7 +167,7 @@ public class RetryStrategyTestCommon {
                 var status = statuses.get(idx);
                 if (acquireInitialToken) {
                     var initialAcquireResponse = strategy.acquireInitialToken(
-                            new AcquireInitialTokenRequest("scope", isLongPolling));
+                            new AcquireInitialTokenRequest("scope", flags));
                     token = initialAcquireResponse.token();
                 }
                 var exception = fromStatus(status);
@@ -224,7 +225,7 @@ public class RetryStrategyTestCommon {
         boolean expectSuccess;
         Integer expectedCapacityAcquired;
         Integer expectedCapacityRemaining;
-        boolean isLongPolling = false;
+        int flags = 0;
 
         TestCaseBuilder(String name) {
             this.name = name;
@@ -256,7 +257,9 @@ public class RetryStrategyTestCommon {
         }
 
         public TestCaseBuilder isLongPolling(boolean isLongPolling) {
-            this.isLongPolling = isLongPolling;
+            if (isLongPolling) {
+                this.flags = this.flags | AcquireInitialTokenFlags.IS_LONG_POLLING;
+            }
             return this;
         }
 

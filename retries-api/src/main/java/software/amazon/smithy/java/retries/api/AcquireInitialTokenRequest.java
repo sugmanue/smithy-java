@@ -8,17 +8,16 @@ package software.amazon.smithy.java.retries.api;
 /**
  * Encapsulates the abstract scope to start the attempts about to be executed using a retry strategy.
  *
- * @param scope         An abstract scope for the attempts about to be executed.
- *                      <p>A scope should be a unique string describing the smallest possible scope of failure for the attempts
- *                      about to be executed. In practical terms, this is a key for the token bucket used to throttle request
- *                      attempts. All attempts with the same scope share the same token bucket within the same
- *                      {@link RetryStrategy}, ensuring that token-bucket throttling for requests against one resource do not
- *                      result in throttling for requests against other, unrelated resources.
- * @param isLongPolling True if the operation is long polling. Retries strategies can use this information to allow
- *                      retries even when otherwise the retry will not be allowed.
+ * @param scope An abstract scope for the attempts about to be executed.
+ *              <p>A scope should be a unique string describing the smallest possible scope of failure for the attempts
+ *              about to be executed. In practical terms, this is a key for the token bucket used to throttle request
+ *              attempts. All attempts with the same scope share the same token bucket within the same
+ *              {@link RetryStrategy}, ensuring that token-bucket throttling for requests against one resource do not
+ *              result in throttling for requests against other, unrelated resources.
+ * @param flags A bitmask of flags for the request. See {@link AcquireInitialTokenFlags} for available flags.
  */
-public record AcquireInitialTokenRequest(String scope, boolean isLongPolling) {
+public record AcquireInitialTokenRequest(String scope, int flags) {
     public AcquireInitialTokenRequest(String scope) {
-        this(scope, false);
+        this(scope, 0);
     }
 }

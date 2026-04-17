@@ -64,7 +64,7 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
     @Override
     public final AcquireInitialTokenResponse acquireInitialToken(AcquireInitialTokenRequest request) {
         logAcquireInitialToken(request);
-        var token = DefaultRetryToken.builder().scope(request.scope()).isLongPolling(request.isLongPolling()).build();
+        var token = DefaultRetryToken.builder().scope(request.scope()).flags(request.flags()).build();
         return new AcquireInitialTokenResponse(token, computeInitialBackoff(request));
     }
 

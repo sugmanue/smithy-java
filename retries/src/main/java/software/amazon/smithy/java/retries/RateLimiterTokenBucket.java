@@ -8,8 +8,6 @@ package software.amazon.smithy.java.retries;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * The {@link RateLimiterTokenBucket} keeps track of past throttling responses and adapts to slow down the send rate to
@@ -23,9 +21,9 @@ import java.util.function.Function;
  * Object)}.
  */
 final class RateLimiterTokenBucket {
-    private final AtomicReference<PersistentState> stateReference;
-    private final AtomicLong requestCount;
-    private final RateLimiterClock clock;
+    final AtomicReference<PersistentState> stateReference;
+    final AtomicLong requestCount;
+    final RateLimiterClock clock;
 
     RateLimiterTokenBucket(RateLimiterClock clock) {
         this.clock = clock;
@@ -35,74 +33,69 @@ final class RateLimiterTokenBucket {
 
     /**
      * Acquire tokens from the bucket. If the bucket contains enough capacity to satisfy the request, this method will
-     * return in {@link RateLimiterAcquireResponse#delay()} a {@link Duration#ZERO} value, otherwise it will return the
-     * amount of time the callers need to wait until enough tokens are refilled.
+     * return a {@link Duration#ZERO} value, otherwise it will return the amount of time the callers need to wait until
+     * enough tokens are refilled.
      */
-    RateLimiterAcquireResponse acquirePermit() {
-        var update = updateState(ts -> ts.tokenBucketAcquire(clock, 1.0));
-        return new RateLimiterAcquireResponse(update.result);
+    Duration acquirePermit() {
+        PersistentState current;
+        PersistentState updated;
+        Duration result;
+        do {
+            current = stateReference.get();
+            var ts = current.toTransient();
+            result = ts.tokenBucketAcquire(clock, 1.0);
+            updated = ts.toPersistent();
+        } while (!stateReference.compareAndSet(current, updated));
+        return result;
     }
 
     /**
      * Updates the estimated send rate after a throttling response.
      */
-    RateLimiterUpdateResponse updateRateAfterThrottling() {
+    void updateRateAfterThrottling() {
+        updateRateAfterThrottling(null);
+    }
+
+    /**
+     * Updates the estimated send rate after a throttling response.
+     */
+    void updateRateAfterThrottling(RateLimiterUpdateResult result) {
         var count = requestCount.incrementAndGet();
-        var update = consumeState(ts -> ts.updateClientSendingRate(clock, true, count, requestCount));
-        return new RateLimiterUpdateResponse(update.newState.measuredTxRate(), update.newState.fillRate());
+        PersistentState current, updated;
+        do {
+            current = stateReference.get();
+            var ts = current.toTransient();
+            ts.updateClientSendingRate(clock, true, count, requestCount);
+            updated = ts.toPersistent();
+        } while (!stateReference.compareAndSet(current, updated));
+        if (result != null) {
+            result.setMeasuredTxRate(updated.measuredTxRate);
+            result.setFillRate(updated.fillRate);
+        }
     }
 
     /**
      * Updates the estimated send rate after a successful response.
      */
-    RateLimiterUpdateResponse updateRateAfterSuccess() {
+    void updateRateAfterSuccess() {
+        updateRateAfterSuccess(null);
+    }
+
+    /**
+     * Updates the estimated send rate after a successful response.
+     */
+    void updateRateAfterSuccess(RateLimiterUpdateResult result) {
         var count = requestCount.incrementAndGet();
-        var update = consumeState(ts -> ts.updateClientSendingRate(clock, false, count, requestCount));
-        return new RateLimiterUpdateResponse(update.newState.measuredTxRate(), update.newState.fillRate());
-    }
-
-    /**
-     * Similar to {@link #updateState} but used when the caller only cares about the side effects of the {@link
-     * Consumer} but not for the value returned.
-     */
-    private StateUpdate<Void> consumeState(Consumer<TransientState> mutator) {
-        return updateState(ts -> {
-            mutator.accept(ts);
-            return null;
-        });
-    }
-
-    /**
-     * Converts the stored persistent state into a transient one and transforms it using the provided function. The
-     * provided function is expected to update the transient state in-place and return a value that will be returned to
-     * the caller in the {@link StateUpdate#result} field. The mutated transient value is converted back to a persistent
-     * one and stored in the atomic reference if no changes were made in-between. If another thread changes the value
-     * in-between, the operation is retried until succeeded.
-     */
-    private <T> StateUpdate<T> updateState(Function<TransientState, T> mutator) {
-        PersistentState current;
-        PersistentState updated;
-        T result;
+        PersistentState current, updated;
         do {
             current = stateReference.get();
-            var transientState = current.toTransient();
-            result = mutator.apply(transientState);
-            updated = transientState.toPersistent();
+            var ts = current.toTransient();
+            ts.updateClientSendingRate(clock, false, count, requestCount);
+            updated = ts.toPersistent();
         } while (!stateReference.compareAndSet(current, updated));
-
-        return new StateUpdate<>(updated, result);
-    }
-
-    /**
-     * Holds the result of a state update operation.
-     */
-    static final class StateUpdate<T> {
-        private final PersistentState newState;
-        private final T result;
-
-        StateUpdate(PersistentState newState, T result) {
-            this.newState = newState;
-            this.result = result;
+        if (result != null) {
+            result.setMeasuredTxRate(updated.measuredTxRate);
+            result.setFillRate(updated.fillRate);
         }
     }
 
@@ -110,7 +103,7 @@ final class RateLimiterTokenBucket {
      * Mutable view of the rate limiter state used during state transitions. Created from a {@link PersistentState},
      * mutated in place, then converted back to a new {@link PersistentState}.
      */
-    static final class TransientState {
+    private static final class TransientState {
         private static final double MIN_FILL_RATE = 0.5;
         private static final double MIN_CAPACITY = 1.0;
         private static final double SMOOTH = 0.8;
@@ -245,28 +238,28 @@ final class RateLimiterTokenBucket {
     /**
      * Immutable snapshot of the rate limiter state stored in an {@link AtomicReference}.
      */
-    static final class PersistentState {
-        private final double fillRate;
-        private final double maxCapacity;
-        private final double currentCapacity;
-        private final boolean lastTimestampIsSet;
-        private final double lastTimestamp;
-        private final boolean enabled;
-        private final double measuredTxRate;
-        private final double lastTxRateBucket;
-        private final double lastMaxRate;
-        private final double lastThrottleTime;
-        private final double timeWindow;
-        private final double newTokenBucketRate;
+    private static final class PersistentState {
+        final double fillRate;
+        final double measuredTxRate;
+        final double maxCapacity;
+        final double currentCapacity;
+        final boolean lastTimestampIsSet;
+        final double lastTimestamp;
+        final boolean enabled;
+        final double lastTxRateBucket;
+        final double lastMaxRate;
+        final double lastThrottleTime;
+        final double timeWindow;
+        final double newTokenBucketRate;
 
         private PersistentState() {
             this.fillRate = 0;
+            this.measuredTxRate = 0;
             this.maxCapacity = 0;
             this.currentCapacity = 0;
             this.lastTimestampIsSet = false;
             this.lastTimestamp = 0;
             this.enabled = false;
-            this.measuredTxRate = 0;
             this.lastTxRateBucket = 0;
             this.lastMaxRate = 0;
             this.lastThrottleTime = 0;
@@ -276,12 +269,12 @@ final class RateLimiterTokenBucket {
 
         PersistentState(TransientState state) {
             this.fillRate = state.fillRate;
+            this.measuredTxRate = state.measuredTxRate;
             this.maxCapacity = state.maxCapacity;
             this.currentCapacity = state.currentCapacity;
             this.lastTimestampIsSet = state.lastTimestampIsSet;
             this.lastTimestamp = state.lastTimestamp;
             this.enabled = state.enabled;
-            this.measuredTxRate = state.measuredTxRate;
             this.lastTxRateBucket = state.lastTxRateBucket;
             this.lastMaxRate = state.lastMaxRate;
             this.lastThrottleTime = state.lastThrottleTime;
@@ -291,20 +284,6 @@ final class RateLimiterTokenBucket {
 
         TransientState toTransient() {
             return new TransientState(this);
-        }
-
-        /**
-         * Returns the current fill rate.
-         */
-        double fillRate() {
-            return fillRate;
-        }
-
-        /**
-         * Returns the measured transaction rate.
-         */
-        double measuredTxRate() {
-            return measuredTxRate;
         }
     }
 }
