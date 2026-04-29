@@ -8,8 +8,7 @@ package software.amazon.smithy.java.aws.client.awsquery;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Objects;
-import software.amazon.smithy.aws.traits.protocols.AwsQueryErrorTrait;
-import software.amazon.smithy.aws.traits.protocols.AwsQueryTrait;
+import software.amazon.smithy.aws.traits.protocols.Ec2QueryTrait;
 import software.amazon.smithy.java.client.core.ClientProtocol;
 import software.amazon.smithy.java.client.core.ClientProtocolFactory;
 import software.amazon.smithy.java.client.core.ProtocolSettings;
@@ -19,7 +18,6 @@ import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.error.CallException;
 import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.ApiOperation;
-import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.schema.TraitKey;
@@ -35,23 +33,25 @@ import software.amazon.smithy.java.xml.XmlCodec;
 import software.amazon.smithy.java.xml.XmlUtil;
 import software.amazon.smithy.model.shapes.ShapeId;
 
-public final class AwsQueryClientProtocol extends HttpClientProtocol {
+/**
+ * Implements the {@code aws.protocols#ec2Query} protocol.
+ */
+public final class Ec2QueryClientProtocol extends HttpClientProtocol {
 
     private static final String CONTENT_TYPE = "application/x-www-form-urlencoded";
 
-    private final ShapeId service;
     private final String version;
     private final HttpErrorDeserializer errorDeserializer;
     private final XmlCodec codec = XmlCodec.builder().build();
 
-    public AwsQueryClientProtocol(ShapeId service, String version) {
-        super(AwsQueryTrait.ID);
-        this.service = Objects.requireNonNull(service, "service is required");
+    public Ec2QueryClientProtocol(ShapeId service, String version) {
+        super(Ec2QueryTrait.ID);
+        Objects.requireNonNull(service, "service is required");
         this.version = Objects.requireNonNull(version, "version is required");
         this.errorDeserializer = HttpErrorDeserializer.builder()
                 .codec(codec)
                 .serviceId(service)
-                .errorPayloadParser(XML_ERROR_PAYLOAD_PARSER)
+                .errorPayloadParser(new Ec2ErrorPayloadParser())
                 .knownErrorFactory(new XmlKnownErrorFactory())
                 .build();
     }
@@ -70,7 +70,7 @@ public final class AwsQueryClientProtocol extends HttpClientProtocol {
     ) {
         String operationName = operation.schema().id().getName();
         QueryFormSerializer serializer = new QueryFormSerializer(
-                QueryFormSerializer.QueryVariant.AWS_QUERY,
+                QueryFormSerializer.QueryVariant.EC2_QUERY,
                 operationName,
                 version);
 
@@ -106,74 +106,62 @@ public final class AwsQueryClientProtocol extends HttpClientProtocol {
             return builder.build();
         }
 
+        // EC2 Query response wraps output in OperationResponse only (no OperationResult)
         var operationName = operation.schema().id().getName();
         try (var codec = XmlCodec.builder()
-                .wrapperElements(List.of(operationName + "Response", operationName + "Result"))
+                .wrapperElements(List.of(operationName + "Response"))
                 .build()) {
             return codec.deserializeShape(response.body().asByteBuffer(), builder);
         }
     }
 
-    private static final HttpErrorDeserializer.ErrorPayloadParser XML_ERROR_PAYLOAD_PARSER =
-            new HttpErrorDeserializer.ErrorPayloadParser() {
-                @Override
-                public CallException parsePayload(
-                        Context context,
-                        Codec codec,
-                        HttpErrorDeserializer.KnownErrorFactory knownErrorFactory,
-                        ShapeId serviceId,
-                        TypeRegistry typeRegistry,
-                        ApiOperation<?, ?> operation,
-                        HttpResponse response,
-                        ByteBuffer buffer
-                ) {
-                    var deserializer = codec.createDeserializer(buffer);
-                    String code = XmlUtil.parseErrorCodeName(deserializer);
-
-                    // First, resolve @awsQueryError custom codes
-                    ShapeBuilder<ModeledException> builder = null;
-                    for (Schema errorSchema : operation.errorSchemas()) {
-                        var trait = errorSchema.getTrait(TraitKey.get(AwsQueryErrorTrait.class));
-                        if (trait != null && code.equals(trait.getCode())) {
-                            builder = typeRegistry.createBuilder(errorSchema.id(), ModeledException.class);
-                            break;
-                        }
-                    }
-
-                    // Fallback: resolve by shape ID
-                    if (builder == null) {
-                        var id = ShapeId.fromOptionalNamespace(serviceId.getNamespace(), code);
-                        builder = typeRegistry.createBuilder(id, ModeledException.class);
-                    }
-
-                    if (builder != null) {
-                        return knownErrorFactory.createError(context, codec, response, builder);
-                    }
-                    return null;
-                }
-
-                @Override
-                public ShapeId extractErrorType(
-                        Document document,
-                        String namespace
-                ) {
-                    return null;
-                }
-            };
-
-    public static final class Factory implements ClientProtocolFactory<AwsQueryTrait> {
-
+    /**
+     * EC2 Query error format: {@code Response > Errors > Error > Code}.
+     * No awsQueryError trait — error code is just the shape name.
+     */
+    private static final class Ec2ErrorPayloadParser implements HttpErrorDeserializer.ErrorPayloadParser {
         @Override
-        public ShapeId id() {
-            return AwsQueryTrait.ID;
+        public CallException parsePayload(
+                Context context,
+                Codec codec,
+                HttpErrorDeserializer.KnownErrorFactory knownErrorFactory,
+                ShapeId serviceId,
+                TypeRegistry typeRegistry,
+                ApiOperation<?, ?> operation,
+                HttpResponse response,
+                ByteBuffer buffer
+        ) {
+            var deserializer = codec.createDeserializer(buffer);
+            String code = XmlUtil.parseErrorCodeName(deserializer);
+
+            var id = ShapeId.fromOptionalNamespace(serviceId.getNamespace(), code);
+            ShapeBuilder<ModeledException> builder = typeRegistry.createBuilder(id, ModeledException.class);
+
+            if (builder != null) {
+                return knownErrorFactory.createError(context, codec, response, builder);
+            }
+            return null;
         }
 
         @Override
-        public ClientProtocol<?, ?> createProtocol(ProtocolSettings settings, AwsQueryTrait trait) {
-            return new AwsQueryClientProtocol(
+        public ShapeId extractErrorType(Document document, String namespace) {
+            return null;
+        }
+    }
+
+    public static final class Factory implements ClientProtocolFactory<Ec2QueryTrait> {
+
+        @Override
+        public ShapeId id() {
+            return Ec2QueryTrait.ID;
+        }
+
+        @Override
+        public ClientProtocol<?, ?> createProtocol(ProtocolSettings settings, Ec2QueryTrait trait) {
+            return new Ec2QueryClientProtocol(
                     Objects.requireNonNull(settings.service(), "service is a required protocol setting"),
                     Objects.requireNonNull(settings.serviceVersion(),
-                            "serviceVersion is a required protocol setting for AWS Query."));
+                            "serviceVersion is a required protocol setting for EC2 Query."));
         }
     }
 }

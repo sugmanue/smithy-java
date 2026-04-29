@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.function.BiConsumer;
+import software.amazon.smithy.aws.traits.protocols.Ec2QueryNameTrait;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
 import software.amazon.smithy.java.core.schema.TraitKey;
@@ -23,7 +24,24 @@ import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.io.ByteBufferUtils;
 import software.amazon.smithy.model.traits.TimestampFormatTrait;
 
-final class AwsQueryFormSerializer implements ShapeSerializer {
+/**
+ * Form-urlencoded serializer for both {@code awsQuery} and {@code ec2Query} protocols.
+ *
+ * <p>The two protocols share the same wire format but differ in member name resolution,
+ * list serialization, and map support. The {@link QueryVariant} flag controls these differences.
+ */
+final class QueryFormSerializer implements ShapeSerializer {
+
+    /**
+     * Selects the protocol-specific serialization behavior.
+     */
+    enum QueryVariant {
+        /** Standard AWS Query protocol. */
+        AWS_QUERY,
+        /** EC2 Query protocol. */
+        EC2_QUERY
+    }
+
     private static final byte[] ACTION_PREFIX = "Action=".getBytes(StandardCharsets.UTF_8);
     private static final byte[] VERSION_PREFIX = "&Version=".getBytes(StandardCharsets.UTF_8);
     private static final byte[] MEMBER = "member".getBytes(StandardCharsets.UTF_8);
@@ -32,6 +50,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
     private static final byte[] VALUE = "value".getBytes(StandardCharsets.UTF_8);
 
     private final FormUrlEncodedSink sink;
+    private final QueryVariant variant;
 
     private byte[][] prefixCache = new byte[8][];
     private int prefixDepth = 0;
@@ -39,7 +58,8 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
     private final ListItemSerializer listSerializer = new ListItemSerializer();
     private final QueryMapSerializer mapSerializer = new QueryMapSerializer();
 
-    AwsQueryFormSerializer(String action, String version) {
+    QueryFormSerializer(QueryVariant variant, String action, String version) {
+        this.variant = variant;
         this.sink = new FormUrlEncodedSink();
         sink.writeBytes(ACTION_PREFIX, 0, ACTION_PREFIX.length);
         sink.writeAscii(action);
@@ -138,13 +158,43 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         return result;
     }
 
-    private static String getMemberName(Schema schema) {
+    // --- Member name resolution (protocol-specific) ---
+
+    private String getMemberName(Schema schema) {
+        return switch (variant) {
+            case AWS_QUERY -> getAwsQueryMemberName(schema);
+            case EC2_QUERY -> getEc2QueryMemberName(schema);
+        };
+    }
+
+    private static String getAwsQueryMemberName(Schema schema) {
         var xmlName = schema.getTrait(TraitKey.XML_NAME_TRAIT);
         if (xmlName != null) {
             return xmlName.getValue();
         }
         return schema.memberName();
     }
+
+    private static String getEc2QueryMemberName(Schema schema) {
+        var ec2Name = schema.getTrait(TraitKey.get(Ec2QueryNameTrait.class));
+        if (ec2Name != null) {
+            return ec2Name.getValue();
+        }
+        var xmlName = schema.getTrait(TraitKey.XML_NAME_TRAIT);
+        if (xmlName != null) {
+            return capitalize(xmlName.getValue());
+        }
+        return capitalize(schema.memberName());
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty() || Character.isUpperCase(s.charAt(0))) {
+            return s;
+        }
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    // --- Struct ---
 
     @Override
     public void writeStruct(Schema schema, SerializableStruct struct) {
@@ -160,8 +210,23 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         struct.serializeMembers(this);
     }
 
+    // --- List (protocol-specific) ---
+
     @Override
     public <T> void writeList(Schema schema, T listState, int size, BiConsumer<T, ShapeSerializer> consumer) {
+        if (variant == QueryVariant.EC2_QUERY) {
+            writeEc2List(schema, listState, size, consumer);
+        } else {
+            writeAwsQueryList(schema, listState, size, consumer);
+        }
+    }
+
+    private <T> void writeAwsQueryList(
+            Schema schema,
+            T listState,
+            int size,
+            BiConsumer<T, ShapeSerializer> consumer
+    ) {
         boolean flattened = schema.hasTrait(TraitKey.XML_FLATTENED_TRAIT);
         Schema memberSchema = schema.listMember();
 
@@ -186,6 +251,27 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         }
 
         listSerializer.reset(memberNameBytes, flattened);
+        consumer.accept(listState, listSerializer);
+
+        if (schema.isMember()) {
+            popPrefix();
+        }
+    }
+
+    private <T> void writeEc2List(Schema schema, T listState, int size, BiConsumer<T, ShapeSerializer> consumer) {
+        // EC2 Query lists are always flattened - no .member. segment
+        if (schema.isMember()) {
+            pushPrefix(getMemberName(schema));
+        }
+
+        if (size == 0) {
+            if (schema.isMember()) {
+                popPrefix();
+            }
+            return;
+        }
+
+        listSerializer.reset(null, true);
         consumer.accept(listState, listSerializer);
 
         if (schema.isMember()) {
@@ -222,7 +308,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         public void writeStruct(Schema schema, SerializableStruct struct) {
             pushIndexedMemberPrefix();
             index++;
-            struct.serializeMembers(AwsQueryFormSerializer.this);
+            struct.serializeMembers(QueryFormSerializer.this);
             popPrefix();
         }
 
@@ -230,7 +316,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         public <T> void writeList(Schema schema, T listState, int size, BiConsumer<T, ShapeSerializer> consumer) {
             pushIndexedMemberPrefix();
             index++;
-            AwsQueryFormSerializer.this.writeList(schema, listState, size, consumer);
+            QueryFormSerializer.this.writeList(schema, listState, size, consumer);
             popPrefix();
         }
 
@@ -238,7 +324,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         public <T> void writeMap(Schema schema, T mapState, int size, BiConsumer<T, MapSerializer> consumer) {
             pushIndexedMemberPrefix();
             index++;
-            AwsQueryFormSerializer.this.writeMap(schema, mapState, size, consumer);
+            QueryFormSerializer.this.writeMap(schema, mapState, size, consumer);
             popPrefix();
         }
 
@@ -317,7 +403,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
 
         @Override
         public void writeDocument(Schema schema, Document value) {
-            throw new SerializationException("AWS Query protocol does not support document types");
+            throw new SerializationException("Query protocols do not support document types");
         }
 
         @Override
@@ -344,8 +430,14 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
         }
     }
 
+    // --- Map (awsQuery only) ---
+
     @Override
     public <T> void writeMap(Schema schema, T mapState, int size, BiConsumer<T, MapSerializer> consumer) {
+        if (variant == QueryVariant.EC2_QUERY) {
+            throw new SerializationException("EC2 Query protocol does not support map serialization");
+        }
+
         boolean flattened = schema.hasTrait(TraitKey.XML_FLATTENED_TRAIT);
         Schema keySchema = schema.mapKeyMember();
         Schema valueSchema = schema.mapValueMember();
@@ -413,7 +505,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
     private final class MapValueSerializer implements ShapeSerializer {
         @Override
         public void writeStruct(Schema schema, SerializableStruct struct) {
-            struct.serializeMembers(AwsQueryFormSerializer.this);
+            struct.serializeMembers(QueryFormSerializer.this);
         }
 
         @Override
@@ -531,7 +623,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
 
         @Override
         public void writeDocument(Schema schema, Document value) {
-            throw new SerializationException("AWS Query protocol does not support document types");
+            throw new SerializationException("Query protocols do not support document types");
         }
 
         @Override
@@ -544,6 +636,8 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
             sink.writeUrlEncoded(value);
         }
     }
+
+    // --- Scalar writes ---
 
     @Override
     public void writeBoolean(Schema schema, boolean value) {
@@ -622,7 +716,7 @@ final class AwsQueryFormSerializer implements ShapeSerializer {
 
     @Override
     public void writeDocument(Schema schema, Document value) {
-        throw new SerializationException("AWS Query protocol does not support document types");
+        throw new SerializationException("Query protocols do not support document types");
     }
 
     @Override
