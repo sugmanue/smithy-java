@@ -37,6 +37,7 @@ import software.amazon.smithy.model.knowledge.ServiceIndex;
 import software.amazon.smithy.model.shapes.ServiceShape;
 import software.amazon.smithy.model.shapes.Shape;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.traits.XmlNamespaceTrait;
 import software.amazon.smithy.model.transform.ModelTransformer;
 import software.amazon.smithy.protocoltests.traits.HttpMalformedRequestTestCase;
 import software.amazon.smithy.protocoltests.traits.HttpMalformedRequestTestsTrait;
@@ -246,6 +247,7 @@ public final class ProtocolTestExtension implements BeforeAllCallback, AfterAllC
             var protocolSettings = ProtocolSettings.builder()
                     .service(service.getId())
                     .serviceVersion(service.getVersion())
+                    .xmlNamespace(service.getTrait(XmlNamespaceTrait.class).orElse(null))
                     .build();
             var instance = protocolFactory.createProtocol(protocolSettings, protocolTraitEntry.getValue());
             protocols.put(protocolTraitEntry.getKey(), instance);

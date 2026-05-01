@@ -6,6 +6,7 @@
 package software.amazon.smithy.java.client.core;
 
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.traits.XmlNamespaceTrait;
 
 /**
  * Settings used to instantiate a {@link ClientProtocol} implementation.
@@ -13,10 +14,12 @@ import software.amazon.smithy.model.shapes.ShapeId;
 public final class ProtocolSettings {
     private final ShapeId service;
     private final String serviceVersion;
+    private final XmlNamespaceTrait xmlNamespace;
 
     private ProtocolSettings(Builder builder) {
         this.service = builder.service;
         this.serviceVersion = builder.serviceVersion;
+        this.xmlNamespace = builder.xmlNamespace;
     }
 
     public ShapeId service() {
@@ -35,6 +38,18 @@ public final class ProtocolSettings {
         return serviceVersion;
     }
 
+    /**
+     * Gets the XML namespace trait from the service, if present.
+     *
+     * <p>When set, XML-based protocols use this namespace on top-level
+     * elements during serialization.
+     *
+     * @return the XML namespace trait, or null if not set
+     */
+    public XmlNamespaceTrait xmlNamespace() {
+        return xmlNamespace;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -42,6 +57,7 @@ public final class ProtocolSettings {
     public static final class Builder {
         private ShapeId service;
         private String serviceVersion;
+        private XmlNamespaceTrait xmlNamespace;
 
         private Builder() {}
 
@@ -58,6 +74,17 @@ public final class ProtocolSettings {
          */
         public Builder serviceVersion(String serviceVersion) {
             this.serviceVersion = serviceVersion;
+            return this;
+        }
+
+        /**
+         * Sets the XML namespace trait from the service.
+         *
+         * @param xmlNamespace the XML namespace trait
+         * @return the builder
+         */
+        public Builder xmlNamespace(XmlNamespaceTrait xmlNamespace) {
+            this.xmlNamespace = xmlNamespace;
             return this;
         }
 

@@ -31,6 +31,7 @@ import software.amazon.smithy.java.http.api.HttpResponse;
 import software.amazon.smithy.java.xml.XmlCodec;
 import software.amazon.smithy.java.xml.XmlUtil;
 import software.amazon.smithy.model.shapes.ShapeId;
+import software.amazon.smithy.model.traits.XmlNamespaceTrait;
 
 /**
  * Implements aws.protocols#restXml.
@@ -45,9 +46,17 @@ public final class RestXmlClientProtocol extends HttpBindingClientProtocol<AwsEv
      *                relative shape IDs.
      */
     public RestXmlClientProtocol(ShapeId service) {
+        this(service, null);
+    }
+
+    /**
+     * @param service The service being called.
+     * @param xmlNamespace The XML namespace from the service, applied to top-level elements.
+     */
+    public RestXmlClientProtocol(ShapeId service, XmlNamespaceTrait xmlNamespace) {
         super(RestXmlTrait.ID);
 
-        this.codec = XmlCodec.builder().build();
+        this.codec = XmlCodec.builder().defaultNamespace(xmlNamespace).build();
         this.errorDeserializer = HttpErrorDeserializer.builder()
                 .codec(codec)
                 .serviceId(service)
@@ -129,7 +138,7 @@ public final class RestXmlClientProtocol extends HttpBindingClientProtocol<AwsEv
 
         @Override
         public ClientProtocol<?, ?> createProtocol(ProtocolSettings settings, RestXmlTrait trait) {
-            return new RestXmlClientProtocol(settings.service());
+            return new RestXmlClientProtocol(settings.service(), settings.xmlNamespace());
         }
     }
 }
