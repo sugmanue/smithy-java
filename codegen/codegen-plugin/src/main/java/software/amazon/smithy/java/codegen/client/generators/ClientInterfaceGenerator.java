@@ -61,6 +61,7 @@ import software.amazon.smithy.model.shapes.ShapeId;
 import software.amazon.smithy.model.shapes.ToShapeId;
 import software.amazon.smithy.model.traits.PaginatedTrait;
 import software.amazon.smithy.model.traits.Trait;
+import software.amazon.smithy.model.traits.XmlNamespaceTrait;
 import software.amazon.smithy.utils.SmithyInternalApi;
 import software.amazon.smithy.utils.StringUtils;
 
@@ -178,6 +179,7 @@ public final class ClientInterfaceGenerator
                                     settings.service(),
                                     directive.service().getVersion(),
                                     defaultProtocolTrait,
+                                    directive.service().getTrait(XmlNamespaceTrait.class).orElse(null),
                                     directive.context()));
                     writer.putContext("clientPlugin", ClientPlugin.class);
                     writer.putContext("client", Client.class);
@@ -435,6 +437,7 @@ public final class ClientInterfaceGenerator
             ShapeId service,
             String serviceVersion,
             Trait defaultProtocolTrait,
+            XmlNamespaceTrait xmlNamespace,
             CodeGenerationContext context) implements
             Runnable {
         @Override
@@ -447,7 +450,8 @@ public final class ClientInterfaceGenerator
                     private static final ${protocolSettings:T} protocolSettings = ${protocolSettings:T}.builder()
                             .service(${shapeId:T}.from(${service:S}))
                             .serviceVersion(${serviceVersion:S})
-                            .build();
+                            ${?hasXmlNamespace}.putServiceTrait(${xmlNamespaceInit:C})
+                            ${/hasXmlNamespace}.build();
                     private static final ${trait:T} protocolTrait = ${initializer:C};
                     """;
             writer.putContext("protocolSettings", ProtocolSettings.class);
@@ -457,6 +461,12 @@ public final class ClientInterfaceGenerator
             writer.putContext("shapeId", ShapeId.class);
             writer.putContext("service", service);
             writer.putContext("serviceVersion", serviceVersion);
+            writer.putContext("hasXmlNamespace", xmlNamespace != null);
+            if (xmlNamespace != null) {
+                var nsInitializer = context.getInitializer(xmlNamespace);
+                writer.putContext("xmlNamespaceInit",
+                        writer.consumer(w -> nsInitializer.accept(w, xmlNamespace)));
+            }
             writer.write(template);
             writer.popState();
         }
