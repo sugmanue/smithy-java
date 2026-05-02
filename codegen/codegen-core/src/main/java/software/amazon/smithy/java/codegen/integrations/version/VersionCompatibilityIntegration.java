@@ -29,9 +29,8 @@ public final class VersionCompatibilityIntegration implements JavaCodegenIntegra
 
     private static final String CLASS_NAME = "SmithyVersionCompatibilityTest";
     private static final String TEMPLATE = IoUtils.readUtf8Resource(
-        VersionCompatibilityIntegration.class,
-        CLASS_NAME + ".java.template"
-    );
+            VersionCompatibilityIntegration.class,
+            CLASS_NAME + ".java.template");
 
     @Override
     public String name() {
@@ -45,10 +44,11 @@ public final class VersionCompatibilityIntegration implements JavaCodegenIntegra
         var testFilePath = "test-java/" + packagePath + "/" + CLASS_NAME + ".java";
 
         var content = TEMPLATE
-            .replace("${VERSION}", Version.VERSION);
+                .replace("${VERSION}", Version.VERSION);
 
         codegenContext.writerDelegator()
-            .useFileWriter(testFilePath, settings.packageNamespace(),
-                writer -> writer.writeInlineWithNoFormatting(content));
+                .useFileWriter(testFilePath,
+                        settings.packageNamespace(),
+                        writer -> writer.writeInlineWithNoFormatting(content));
     }
 }
