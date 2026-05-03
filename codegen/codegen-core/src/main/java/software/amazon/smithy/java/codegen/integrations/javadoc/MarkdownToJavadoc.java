@@ -14,6 +14,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 import org.jsoup.nodes.TextNode;
+import org.jsoup.parser.Tag;
 
 /**
  * Converts Markdown or HTML text (from Smithy {@code @documentation} traits) into
@@ -96,6 +97,13 @@ final class MarkdownToJavadoc {
     }
 
     private static void cleanDom(Element root) {
+        // Strip non-HTML tags (e.g., <note>, <important> from AWS models).
+        // Unwrap keeps the text content but removes the tag itself.
+        for (Element el : root.getAllElements()) {
+            if (!el.tagName().equals("#root") && !Tag.isKnownTag(el.tagName())) {
+                el.unwrap();
+            }
+        }
         // AWS models produce <li><p>text</p></li>; unwrap the <p> for cleaner output
         for (Element p : root.select("li > p")) {
             p.unwrap();

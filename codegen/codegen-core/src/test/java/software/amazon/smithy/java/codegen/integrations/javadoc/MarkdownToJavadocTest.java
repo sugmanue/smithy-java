@@ -186,6 +186,17 @@ class MarkdownToJavadocTest {
             // <ul> should be preceded by a blank line since it follows a <p>
             assertThat(result).contains("\n\n<ul>");
         }
+
+        @Test
+        void stripsUnknownHtmlTags() {
+            var result = MarkdownToJavadoc.convert(
+                    "<p>Text.</p><note>This is not a real tag.</note><important>Neither is this.</important>");
+            // Unknown tags removed, but their text content preserved
+            assertThat(result).doesNotContain("<note>");
+            assertThat(result).doesNotContain("<important>");
+            assertThat(result).contains("This is not a real tag.");
+            assertThat(result).contains("Neither is this.");
+        }
     }
 
     @Nested
