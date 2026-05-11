@@ -38,10 +38,14 @@ public class VersionCheckBench {
 
     private static final ModuleVersion CODEGEN_VERSION = new ModuleVersion("benchmark", 1, 1, 0);
 
-    @Setup(org.openjdk.jmh.annotations.Level.Invocation)
+    @Setup(org.openjdk.jmh.annotations.Level.Trial)
     @SuppressFBWarnings(value = "LG_LOST_LOGGER_DUE_TO_WEAK_REFERENCE", justification = "Intentional for benchmark")
-    public void setup() {
+    public void setupTrial() {
         Logger.getLogger(VersionCheck.class.getName()).setLevel(Level.OFF);
+    }
+
+    @Setup(org.openjdk.jmh.annotations.Level.Invocation)
+    public void setupInvocation() {
         VersionCheck.reset();
     }
 

@@ -18,9 +18,13 @@ public record ModuleVersion(String moduleName, int major, int minor, int patch) 
     @Override
     public int compareTo(ModuleVersion other) {
         int c = Integer.compare(major, other.major);
-        if (c != 0) return c;
+        if (c != 0) {
+            return c;
+        }
         c = Integer.compare(minor, other.minor);
-        if (c != 0) return c;
+        if (c != 0) {
+            return c;
+        }
         return Integer.compare(patch, other.patch);
     }
 
