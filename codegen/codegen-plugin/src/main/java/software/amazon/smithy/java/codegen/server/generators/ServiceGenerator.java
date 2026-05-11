@@ -23,6 +23,8 @@ import software.amazon.smithy.java.codegen.generators.SchemaFieldGenerator;
 import software.amazon.smithy.java.codegen.generators.TypeRegistryGenerator;
 import software.amazon.smithy.java.codegen.sections.ClassSection;
 import software.amazon.smithy.java.codegen.writer.JavaWriter;
+import software.amazon.smithy.java.core.Version;
+import software.amazon.smithy.java.core.VersionCheck;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SchemaIndex;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
@@ -89,6 +91,7 @@ public final class ServiceGenerator implements
                                                 ${builder:C|}
 
                                                 private static final ${schemaIndex:T} SCHEMA_INDEX = new ${generatedSchemaIndex:L}();
+                                                private static final ${moduleVersion:T} CODEGEN_VERSION = new ${moduleVersion:T}("codegen", ${major:L}, ${minor:L}, ${patch:L});
 
                                                 @Override
                                                 @SuppressWarnings("unchecked")
@@ -126,6 +129,12 @@ public final class ServiceGenerator implements
                             writer.putContext("typeRegistryClass", TypeRegistry.class);
                             writer.putContext("schemaIndex", SchemaIndex.class);
                             writer.putContext("generatedSchemaIndex", generatedSchemaIndex);
+                            var versionParts = Version.VERSION.split("\\.");
+                            writer.putContext("moduleVersion",
+                                    software.amazon.smithy.java.versionspi.ModuleVersion.class);
+                            writer.putContext("major", Integer.parseInt(versionParts[0]));
+                            writer.putContext("minor", Integer.parseInt(versionParts[1]));
+                            writer.putContext("patch", Integer.parseInt(versionParts[2].replaceAll("[^0-9].*", "")));
                             var errorSymbols = getImplicitErrorSymbols(
                                     directive.symbolProvider(),
                                     directive.model(),
@@ -210,6 +219,7 @@ public final class ServiceGenerator implements
                     """
                             private ${service:T}(Builder builder) {
                                 ${C|}
+                                $T.check(CODEGEN_VERSION);
                             }
                             """,
                     writer.consumer(w -> {
@@ -225,7 +235,8 @@ public final class ServiceGenerator implements
                                 "this.allOperations = $T.of(${#operations}${value:L}${^key.last}, ${/key.last}${/operations});",
                                 List.class);
                         writer.popState();
-                    }));
+                    }),
+                    VersionCheck.class);
         }
     }
 

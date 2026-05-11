@@ -51,13 +51,22 @@ afterEvaluate {
         }
     }
 
-    // Generate a version marker resource for this module.
-    val generateVersionProvider = tasks.register<GenerateVersionProviderTask>("generateVersionProvider") {
-        this.moduleName = moduleName
-        this.moduleVersion = smithyJavaVersion
+    // Generate a SmithyVersionProvider SPI implementation for this module.
+    if (!project.plugins.hasPlugin("software.amazon.smithy.gradle.smithy-jar")) {
+        val dependsOnCore = project.path == ":core" || project.configurations.getByName("compileClasspath")
+            .resolvedConfiguration.resolvedArtifacts.any {
+                it.moduleVersion.id.group == "software.amazon.smithy.java" && it.moduleVersion.id.name == "core"
+            }
+        val generateVersionProvider = tasks.register<GenerateVersionProviderTask>("generateVersionProvider") {
+            this.moduleName = moduleName
+            this.moduleVersion = smithyJavaVersion
+            this.generateInterface = !dependsOnCore
+        }
+        sourceSets["main"].java.srcDir(generateVersionProvider.map { it.outputDir.resolve("java") })
+        sourceSets["main"].resources.srcDir(generateVersionProvider.map { it.outputDir.resolve("resources") })
+        tasks.named("compileJava") { dependsOn(generateVersionProvider) }
+        tasks.named("processResources") { dependsOn(generateVersionProvider) }
     }
-    sourceSets["main"].resources.srcDir(generateVersionProvider.map { it.outputDir.resolve("resources") })
-    tasks.named("processResources") { dependsOn(generateVersionProvider) }
 }
 
 // Always run javadoc after build.

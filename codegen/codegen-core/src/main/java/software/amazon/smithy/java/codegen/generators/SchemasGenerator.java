@@ -15,8 +15,6 @@ import software.amazon.smithy.java.codegen.CodegenUtils;
 import software.amazon.smithy.java.codegen.JavaCodegenSettings;
 import software.amazon.smithy.java.codegen.generators.SchemaFieldOrder.SchemaField;
 import software.amazon.smithy.java.codegen.writer.JavaWriter;
-import software.amazon.smithy.java.core.Version;
-import software.amazon.smithy.java.core.VersionCheck;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SchemaBuilder;
 import software.amazon.smithy.model.Model;
@@ -53,12 +51,9 @@ public final class SchemasGenerator
     public void accept(CustomizeDirective<CodeGenerationContext, JavaCodegenSettings> directive) {
 
         var order = directive.context().schemaFieldOrder();
-        boolean first = true;
         for (var shapeOrder : order.partitions()) {
             var className = shapeOrder.getFirst().classRef().className();
             var fileName = CodegenUtils.getJavaFilePath(directive.settings(), "model", className);
-            boolean isFirst = first;
-            first = false;
             directive.context()
                     .writerDelegator()
                     .useFileWriter(fileName, CodegenUtils.getModelNamespace(directive.settings()), writer -> {
@@ -68,10 +63,7 @@ public final class SchemasGenerator
                                          * Defines schemas for shapes in the model package.
                                          */
                                         final class ${className:L} {
-                                            ${?versionCheck}static {
-                                                ${versionCheck:C|}
-                                            }
-                                            ${/versionCheck}${#builders}${value:C|}
+                                            ${#builders}${value:C|}
                                             ${/builders}${schemas:C|}
                                             ${#resolvers}
                                             ${value:C|}
@@ -105,12 +97,6 @@ public final class SchemasGenerator
                         writer.putContext("schemas", schemas);
                         writer.putContext("builders", builders);
                         writer.putContext("resolvers", resolvers);
-                        if (isFirst) {
-                            writer.putContext("versionCheck",
-                                    (Runnable) () -> writer.write("$T.check($S);",
-                                            VersionCheck.class,
-                                            Version.VERSION));
-                        }
                         writer.write(template);
                         writer.popState();
                     });
