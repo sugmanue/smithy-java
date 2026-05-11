@@ -19,12 +19,13 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import software.amazon.smithy.java.versionspi.ModuleVersion;
 
 /**
  * Measures the startup cost of the version compatibility check.
  *
- * <p>In production, {@code VersionCheck.check()} runs exactly once during class
- * initialization. This benchmark measures the per-invocation cost to quantify
+ * <p>In production, {@code VersionCheck.check()} runs exactly once during client
+ * construction. This benchmark measures the per-invocation cost to quantify
  * the one-time startup impact.
  */
 @State(Scope.Benchmark)
@@ -35,24 +36,25 @@ import org.openjdk.jmh.annotations.Warmup;
 @Fork(1)
 public class VersionCheckBench {
 
-    private static final String VERSION = Version.VERSION;
+    private static final ModuleVersion CODEGEN_VERSION = new ModuleVersion("benchmark", 1, 1, 0);
 
-    @Setup
+    @Setup(org.openjdk.jmh.annotations.Level.Invocation)
     @SuppressFBWarnings(value = "LG_LOST_LOGGER_DUE_TO_WEAK_REFERENCE", justification = "Intentional for benchmark")
     public void setup() {
         Logger.getLogger(VersionCheck.class.getName()).setLevel(Level.OFF);
+        VersionCheck.reset();
     }
 
     @Benchmark
     public void versionCheckEnabled() {
-        VersionCheck.check(VERSION);
+        VersionCheck.check(CODEGEN_VERSION);
     }
 
     @Benchmark
     public void versionCheckSkipped() {
         System.setProperty("smithy.java.skipVersionCheck", "true");
         try {
-            VersionCheck.check(VERSION);
+            VersionCheck.check(CODEGEN_VERSION);
         } finally {
             System.clearProperty("smithy.java.skipVersionCheck");
         }
