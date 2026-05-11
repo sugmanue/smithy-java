@@ -7,11 +7,11 @@ package software.amazon.smithy.java.core;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
+import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
@@ -38,13 +38,13 @@ public class VersionCheckBench {
 
     private static final ModuleVersion CODEGEN_VERSION = new ModuleVersion("benchmark", 1, 1, 0);
 
-    @Setup(org.openjdk.jmh.annotations.Level.Trial)
+    @Setup(Level.Trial)
     @SuppressFBWarnings(value = "LG_LOST_LOGGER_DUE_TO_WEAK_REFERENCE", justification = "Intentional for benchmark")
     public void setupTrial() {
-        Logger.getLogger(VersionCheck.class.getName()).setLevel(Level.OFF);
+        Logger.getLogger(VersionCheck.class.getName()).setLevel(java.util.logging.Level.OFF);
     }
 
-    @Setup(org.openjdk.jmh.annotations.Level.Invocation)
+    @Setup(Level.Invocation)
     public void setupInvocation() {
         VersionCheck.reset();
     }
