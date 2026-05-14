@@ -5,6 +5,8 @@
 
 package software.amazon.smithy.java.codegen.integrations.javadoc;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.commonmark.parser.Parser;
@@ -37,11 +39,25 @@ final class MarkdownToJavadoc {
 
     private static final Parser MD_PARSER = Parser.builder().build();
     private static final HtmlRenderer HTML_RENDERER = HtmlRenderer.builder().build();
-    private static final Pattern WHITESPACE_RUN = Pattern.compile("\\s+");
 
     // Commonmark treats <Foo> as an HTML tag. Since Java generics like List<String> use
     // uppercase type names, we escape < before uppercase letters so they survive as &lt;
     private static final Pattern JAVA_GENERIC = Pattern.compile("<([A-Z])");
+
+    // Fast-path pattern: matches commonmark output that is a single <p>...</p>\n with only inline content.
+    // This avoids jsoup parsing for the most common case (simple single-paragraph documentation).
+    private static final Pattern SIMPLE_PARAGRAPH = Pattern.compile(
+            "^<p>([^<]*(?:<(?:code|em|strong|a\\b)[^>]*>[^<]*</(?:code|em|strong|a)>[^<]*)*)</p>\n$");
+
+    // Cached indent strings to avoid String.repeat() allocations
+    private static final String[] INDENTS = new String[16];
+
+    static {
+        INDENTS[0] = "";
+        for (int i = 1; i < INDENTS.length; i++) {
+            INDENTS[i] = " ".repeat(i);
+        }
+    }
 
     private static final Set<String> BLOCK_TAGS = Set.of(
             "p",
@@ -84,11 +100,20 @@ final class MarkdownToJavadoc {
 
         input = JAVA_GENERIC.matcher(input).replaceAll("&lt;$1");
         String html = HTML_RENDERER.render(MD_PARSER.parse(input));
+
+        // Fast path: single paragraph with only inline content — skip jsoup entirely
+        var simpleMatcher = SIMPLE_PARAGRAPH.matcher(html);
+        if (simpleMatcher.matches()) {
+            String content = simpleMatcher.group(1);
+            return renderSimpleParagraph(content, maxWidth);
+        }
+
         Document doc = Jsoup.parseBodyFragment(html);
         cleanDom(doc.body());
 
-        var sb = new StringBuilder();
-        renderChildren(doc.body(), sb, maxWidth, 0, true);
+        var sb = new StringBuilder(html.length());
+        int[] col = {0};
+        renderChildren(doc.body(), sb, col, maxWidth, 0, true, false);
         return sb.toString().strip();
     }
 
@@ -96,63 +121,143 @@ final class MarkdownToJavadoc {
         return convert(input, DEFAULT_MAX_WIDTH);
     }
 
+    /**
+     * Fast path for simple single-paragraph content. Handles @ escaping, HTML entity encoding,
+     * whitespace collapsing, and line wrapping without building a DOM tree.
+     */
+    private static String renderSimpleParagraph(String content, int maxWidth) {
+        var sb = new StringBuilder(content.length());
+        boolean lastWasSpace = false;
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (c == '<') {
+                int end = content.indexOf('>', i);
+                if (end >= 0) {
+                    sb.append(content, i, end + 1);
+                    i = end;
+                    lastWasSpace = false;
+                } else {
+                    sb.append("&lt;");
+                    lastWasSpace = false;
+                }
+            } else if (c == '&') {
+                int semi = content.indexOf(';', i);
+                if (semi >= 0 && semi - i < 8) {
+                    sb.append(content, i, semi + 1);
+                    i = semi;
+                } else {
+                    sb.append("&amp;");
+                }
+                lastWasSpace = false;
+            } else if (c == '@') {
+                sb.append("{@literal @}");
+                lastWasSpace = false;
+            } else if (Character.isWhitespace(c)) {
+                if (!lastWasSpace) {
+                    sb.append(' ');
+                    lastWasSpace = true;
+                }
+            } else {
+                sb.append(c);
+                lastWasSpace = false;
+            }
+        }
+        String text = sb.toString().strip();
+
+        if (text.length() <= maxWidth) {
+            return text;
+        }
+        var result = new StringBuilder(text.length() + 16);
+        int[] col = {0};
+        appendWrapped(result, col, text, maxWidth, 0);
+        return result.toString().strip();
+    }
+
+    /**
+     * Cleans the DOM without using CSS selectors. Iterates elements directly.
+     */
     private static void cleanDom(Element root) {
         // Strip non-HTML tags (e.g., <note>, <important> from AWS models).
-        // Unwrap keeps the text content but removes the tag itself.
         for (Element el : root.getAllElements()) {
             if (!el.tagName().equals("#root") && !Tag.isKnownTag(el.tagName())) {
                 el.unwrap();
             }
         }
-        // AWS models produce <li><p>text</p></li>; unwrap the <p> for cleaner output
-        for (Element p : root.select("li > p")) {
-            p.unwrap();
-        }
-        // Remove empty paragraphs (whitespace-only counts as empty)
-        for (Element p : root.select("p")) {
-            if (p.text().isBlank() && p.children().isEmpty()) {
-                p.remove();
+        // AWS models produce <li><p>text</p></li>; unwrap the <p> for cleaner output.
+        // Also remove empty paragraphs. Single pass over all elements instead of two selector queries.
+        List<Element> toUnwrap = null;
+        List<Element> toRemove = null;
+        for (Element el : root.getAllElements()) {
+            if (!el.tagName().equals("p")) {
+                continue;
+            }
+            Element parent = el.parent();
+            if (parent != null && parent.tagName().equals("li")) {
+                if (toUnwrap == null) {
+                    toUnwrap = new ArrayList<>();
+                }
+                toUnwrap.add(el);
+            } else if (el.text().isBlank() && el.children().isEmpty()) {
+                if (toRemove == null) {
+                    toRemove = new ArrayList<>();
+                }
+                toRemove.add(el);
             }
         }
-    }
-
-    private static void renderChildren(
-            Element parent,
-            StringBuilder sb,
-            int maxWidth,
-            int indent,
-            boolean isFirstBlock
-    ) {
-        boolean first = isFirstBlock;
-        for (Node child : parent.childNodes()) {
-            first = renderNode(child, sb, maxWidth, indent, first);
+        if (toUnwrap != null) {
+            for (Element el : toUnwrap) {
+                el.unwrap();
+            }
+        }
+        if (toRemove != null) {
+            for (Element el : toRemove) {
+                el.remove();
+            }
         }
     }
 
     /**
-     * Renders a single DOM node to the output buffer.
-     *
-     * @param isFirstBlock tracks whether the first block-level element has been emitted yet.
-     *     The first {@code <p>} tag is suppressed (Javadoc convention: first paragraph has no tag).
-     * @return the updated value of isFirstBlock
+     * @param col single-element array tracking current column position (avoids scanning StringBuilder)
+     * @param insidePre whether we are inside a pre element (avoids parent-chain walks)
      */
-    private static boolean renderNode(Node node, StringBuilder sb, int maxWidth, int indent, boolean isFirstBlock) {
+    private static void renderChildren(
+            Element parent,
+            StringBuilder sb,
+            int[] col,
+            int maxWidth,
+            int indent,
+            boolean isFirstBlock,
+            boolean insidePre
+    ) {
+        boolean first = isFirstBlock;
+        for (Node child : parent.childNodes()) {
+            first = renderNode(child, sb, col, maxWidth, indent, first, insidePre);
+        }
+    }
+
+    private static boolean renderNode(
+            Node node,
+            StringBuilder sb,
+            int[] col,
+            int maxWidth,
+            int indent,
+            boolean isFirstBlock,
+            boolean insidePre
+    ) {
         if (node instanceof TextNode text) {
             String content = text.getWholeText();
-            if (!isInsidePre(node)) {
-                content = WHITESPACE_RUN.matcher(content).replaceAll(" ");
+            if (!insidePre) {
+                content = collapseAndEncode(content);
                 if (content.isBlank()) {
                     return isFirstBlock;
                 }
-                content = content.replace("@", "{@literal @}");
-                content = encodeHtmlText(content);
             }
-            appendWrapped(sb, content, maxWidth, indent);
+            appendWrapped(sb, col, content, maxWidth, indent);
             return false;
         }
 
         if (node instanceof Element el) {
-            renderElement(el, sb, maxWidth, indent, isFirstBlock);
+            renderElement(el, sb, col, maxWidth, indent, isFirstBlock, insidePre);
             return false;
         }
 
@@ -162,116 +267,131 @@ final class MarkdownToJavadoc {
     private static void renderElement(
             Element el,
             StringBuilder sb,
+            int[] col,
             int maxWidth,
             int indent,
-            boolean isFirstBlock
+            boolean isFirstBlock,
+            boolean insidePre
     ) {
         String tag = el.tagName();
 
-        // <pre> content is preserved verbatim (no wrapping, no escaping)
         if (tag.equals("pre")) {
-            ensureNewline(sb);
+            ensureNewline(sb, col);
             if (!isFirstBlock) {
-                appendIndent(sb, indent);
+                appendIndent(sb, col, indent);
                 sb.append("\n");
+                col[0] = 0;
             }
-            appendIndent(sb, indent);
-            // Commonmark wraps code blocks in <pre><code>; render as <pre>{@code ...}</pre>
-            Element codeChild = el.selectFirst("> code");
+            appendIndent(sb, col, indent);
+            // Commonmark wraps code blocks in <pre><code>; find <code> child directly
+            Element codeChild = firstChildByTag(el, "code");
             if (codeChild != null) {
-                sb.append("<pre>{@code\n").append(codeChild.wholeText()).append("\n");
-                appendIndent(sb, indent);
+                sb.append("<pre>{@code\n");
+                col[0] = 0;
+                sb.append(codeChild.wholeText()).append("\n");
+                col[0] = 0;
+                appendIndent(sb, col, indent);
                 sb.append("}</pre>");
+                col[0] += 6;
             } else {
-                sb.append("<pre>").append(el.wholeText()).append("</pre>");
+                String pre = "<pre>" + el.wholeText() + "</pre>";
+                sb.append(pre);
+                int nl = pre.lastIndexOf('\n');
+                col[0] = nl < 0 ? col[0] + pre.length() : pre.length() - nl - 1;
             }
             return;
         }
 
         if (tag.equals("hr")) {
-            ensureNewline(sb);
-            appendIndent(sb, indent);
+            ensureNewline(sb, col);
+            appendIndent(sb, col, indent);
             sb.append("<hr>");
+            col[0] += 4;
             return;
         }
 
         if (tag.equals("br")) {
             sb.append("<br>");
+            col[0] += 4;
             return;
         }
 
         if (tag.equals("img")) {
-            sb.append(el.outerHtml());
+            String html = el.outerHtml();
+            sb.append(html);
+            int nl = html.lastIndexOf('\n');
+            col[0] = nl < 0 ? col[0] + html.length() : html.length() - nl - 1;
             return;
         }
 
-        // First <p> in the document: emit content without the <p> tag (Javadoc convention)
         if (tag.equals("p") && isFirstBlock) {
-            renderChildren(el, sb, maxWidth, indent, false);
+            renderChildren(el, sb, col, maxWidth, indent, false, false);
             return;
         }
 
-        // Subsequent <p>: blank line separator, then <p> prefix
         if (tag.equals("p")) {
-            ensureNewline(sb);
+            ensureNewline(sb, col);
             sb.append("\n");
-            appendIndent(sb, indent);
+            col[0] = 0;
+            appendIndent(sb, col, indent);
             sb.append("<p>");
-            renderChildren(el, sb, maxWidth, indent, false);
+            col[0] += 3;
+            renderChildren(el, sb, col, maxWidth, indent, false, false);
             return;
         }
 
-        // Block-level tags: each on its own line, children indented
         if (BLOCK_TAGS.contains(tag)) {
-            ensureNewline(sb);
-            // Blank line before top-level blocks (e.g., <ul> after text),
-            // but not before nested blocks (e.g., <li> inside <ul>)
+            ensureNewline(sb, col);
             if (isTopLevelBlock(el)) {
                 sb.append("\n");
+                col[0] = 0;
             }
-            appendIndent(sb, indent);
-            sb.append("<").append(tag).append(copyAttributes(el)).append(">\n");
-            renderChildren(el, sb, maxWidth, indent + INDENT_WIDTH, false);
-            ensureNewline(sb);
-            appendIndent(sb, indent);
+            appendIndent(sb, col, indent);
+            sb.append("<").append(tag);
+            appendAttributes(sb, el);
+            sb.append(">\n");
+            col[0] = 0;
+            renderChildren(el, sb, col, maxWidth, indent + INDENT_WIDTH, false, insidePre);
+            ensureNewline(sb, col);
+            appendIndent(sb, col, indent);
             sb.append("</").append(tag).append(">");
+            col[0] += tag.length() + 3;
             return;
         }
 
-        // Inline tags: add indent if starting a new line (e.g., <code> as first child of <li>)
-        if (currentLineLength(sb) == 0 && indent > 0) {
-            appendIndent(sb, indent);
+        // Inline tags
+        if (col[0] == 0 && indent > 0) {
+            appendIndent(sb, col, indent);
         }
-        sb.append("<").append(tag).append(copyAttributes(el)).append(">");
-        renderChildren(el, sb, maxWidth, indent, false);
+        sb.append("<").append(tag);
+        appendAttributes(sb, el);
+        sb.append(">");
+        col[0] += tag.length() + 2;
+        renderChildren(el, sb, col, maxWidth, indent, false, insidePre);
         sb.append("</").append(tag).append(">");
+        col[0] += tag.length() + 3;
     }
 
     /**
-     * Appends text to the buffer with word wrapping. Wrapping respects the current indent
-     * level (subtracted from maxWidth) and never breaks inside Javadoc inline tags like
-     * {@code {@literal @}}.
+     * Appends text with word wrapping, tracking column position via col[0].
      */
-    private static void appendWrapped(StringBuilder sb, String text, int maxWidth, int indent) {
+    private static void appendWrapped(StringBuilder sb, int[] col, String text, int maxWidth, int indent) {
         int effectiveMax = Math.max(maxWidth - indent, MIN_WRAP_WIDTH);
-        int col = currentLineLength(sb);
-        if (col == 0 && indent > 0) {
-            appendIndent(sb, indent);
-            col = indent;
+        if (col[0] == 0 && indent > 0) {
+            appendIndent(sb, col, indent);
         }
         int i = 0;
         while (i < text.length()) {
             // Javadoc inline tags (e.g., {@literal @}) must not be split
             if (text.charAt(i) == '{' && i + 1 < text.length() && text.charAt(i + 1) == '@') {
                 int braceEnd = findMatchingBrace(text, i);
-                String token = text.substring(i, braceEnd);
-                if (col + token.length() > effectiveMax && col > indent) {
-                    wrapLine(sb);
-                    appendIndent(sb, indent);
-                    col = indent;
+                int tokenLen = braceEnd - i;
+                if (col[0] + tokenLen > effectiveMax && col[0] > indent) {
+                    wrapLine(sb, col);
+                    appendIndent(sb, col, indent);
                 }
-                sb.append(token);
-                col += token.length();
+                sb.append(text, i, braceEnd);
+                col[0] += tokenLen;
                 i = braceEnd;
                 continue;
             }
@@ -290,59 +410,71 @@ final class MarkdownToJavadoc {
             if (wordEnd == wordStart) {
                 break;
             }
-            String word = text.substring(wordStart, wordEnd);
-            if (col + word.length() > effectiveMax && col > indent) {
-                wrapLine(sb);
-                appendIndent(sb, indent);
-                word = word.stripLeading();
-                col = indent;
+            int wordLen = wordEnd - wordStart;
+            if (col[0] + wordLen > effectiveMax && col[0] > indent) {
+                wrapLine(sb, col);
+                appendIndent(sb, col, indent);
+                // Skip leading spaces after wrap
+                while (wordStart < wordEnd && text.charAt(wordStart) == ' ') {
+                    wordStart++;
+                }
+                wordLen = wordEnd - wordStart;
             }
-            sb.append(word);
-            col += word.length();
+            sb.append(text, wordStart, wordEnd);
+            col[0] += wordLen;
             i = wordEnd;
         }
     }
 
     /**
-     * Encodes HTML special characters in text, preserving Javadoc inline tags like
-     * {@code {@literal @}} which use braces and @ that must not be encoded.
+     * Collapses whitespace and encodes HTML special characters in a single pass.
+     * Also escapes @ signs for Javadoc safety.
      */
-    private static String encodeHtmlText(String text) {
+    private static String collapseAndEncode(String text) {
         var sb = new StringBuilder(text.length());
+        boolean lastWasSpace = false;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (c == '{' && i + 1 < text.length() && text.charAt(i + 1) == '@') {
+            if (Character.isWhitespace(c)) {
+                if (!lastWasSpace) {
+                    sb.append(' ');
+                    lastWasSpace = true;
+                }
+            } else if (c == '{' && i + 1 < text.length() && text.charAt(i + 1) == '@') {
                 int end = findMatchingBrace(text, i);
                 sb.append(text, i, end);
                 i = end - 1;
+                lastWasSpace = false;
             } else if (c == '&') {
                 sb.append("&amp;");
+                lastWasSpace = false;
             } else if (c == '<') {
                 sb.append("&lt;");
+                lastWasSpace = false;
             } else if (c == '>') {
                 sb.append("&gt;");
+                lastWasSpace = false;
+            } else if (c == '@') {
+                sb.append("{@literal @}");
+                lastWasSpace = false;
             } else {
                 sb.append(c);
+                lastWasSpace = false;
             }
         }
         return sb.toString();
     }
 
-    private static boolean isInsidePre(Node node) {
-        Node parent = node.parentNode();
-        while (parent != null) {
-            if (parent instanceof Element el && el.tagName().equals("pre")) {
-                return true;
+    /** Finds the first direct child element with the given tag name, or null. */
+    private static Element firstChildByTag(Element parent, String tagName) {
+        for (Node child : parent.childNodes()) {
+            if (child instanceof Element el && el.tagName().equals(tagName)) {
+                return el;
             }
-            parent = parent.parentNode();
         }
-        return false;
+        return null;
     }
 
-    /**
-     * A block is "top-level" if it is not nested inside a list or table structure.
-     * Top-level blocks get a blank line before them for visual separation.
-     */
     private static boolean isTopLevelBlock(Element el) {
         var parent = el.parent();
         if (parent == null) {
@@ -354,40 +486,41 @@ final class MarkdownToJavadoc {
         };
     }
 
-    private static String copyAttributes(Element el) {
+    /** Appends element attributes directly to sb (avoids intermediate String allocation). */
+    private static void appendAttributes(StringBuilder sb, Element el) {
         if (el.attributes().isEmpty()) {
-            return "";
+            return;
         }
-        var sb = new StringBuilder();
         el.attributes()
                 .forEach(attr -> sb.append(" ")
                         .append(attr.getKey())
                         .append("=\"")
                         .append(attr.getValue())
                         .append("\""));
-        return sb.toString();
     }
 
-    private static void appendIndent(StringBuilder sb, int indent) {
-        sb.append(" ".repeat(indent));
+    private static void appendIndent(StringBuilder sb, int[] col, int indent) {
+        if (indent < INDENTS.length) {
+            sb.append(INDENTS[indent]);
+        } else {
+            sb.append(" ".repeat(indent));
+        }
+        col[0] += indent;
     }
 
-    private static void ensureNewline(StringBuilder sb) {
+    private static void ensureNewline(StringBuilder sb, int[] col) {
         if (!sb.isEmpty() && sb.charAt(sb.length() - 1) != '\n') {
             sb.append("\n");
+            col[0] = 0;
         }
     }
 
-    private static void wrapLine(StringBuilder sb) {
+    private static void wrapLine(StringBuilder sb, int[] col) {
         while (!sb.isEmpty() && sb.charAt(sb.length() - 1) == ' ') {
             sb.setLength(sb.length() - 1);
         }
         sb.append("\n");
-    }
-
-    private static int currentLineLength(StringBuilder sb) {
-        int lastNewline = sb.lastIndexOf("\n");
-        return lastNewline < 0 ? sb.length() : sb.length() - lastNewline - 1;
+        col[0] = 0;
     }
 
     private static int findMatchingBrace(String s, int start) {
