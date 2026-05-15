@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
 import software.amazon.smithy.codegen.core.ImportContainer;
 import software.amazon.smithy.codegen.core.Symbol;
 import software.amazon.smithy.java.codegen.SymbolProperties;
@@ -52,12 +51,16 @@ final class JavaImportContainer implements ImportContainer {
      * @return sorted list of imports
      */
     private Set<String> getSortedAndFilteredImports() {
-        return imports.values()
-                .stream()
-                .filter(s -> s.size() == 1)
-                .map(s -> s.iterator().next())
-                .filter(s -> !s.getNamespace().equals(namespace))
-                .map(Symbol::getFullName)
-                .collect(Collectors.toCollection(TreeSet::new));
+        TreeSet<String> sortedImports = new TreeSet<>();
+        for (Set<Symbol> s : imports.values()) {
+            if (s.size() == 1) {
+                Symbol next = s.iterator().next();
+                if (!next.getNamespace().equals(namespace)) {
+                    String fullName = next.getFullName();
+                    sortedImports.add(fullName);
+                }
+            }
+        }
+        return sortedImports;
     }
 }
