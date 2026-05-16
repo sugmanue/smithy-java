@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -1279,6 +1280,114 @@ public class ValidatorTest {
                 Arguments.of(63, 63, 0, 63),
                 Arguments.of(64, 64, 0, 64),
                 Arguments.of(65, 65, 0, 65));
+    }
+
+    @Test
+    public void customConstraintsWork() {
+        var validator = Validator.builder().build();
+        var schema = Schema.createInteger(ShapeId.from("smithy.CustomTest#TestInt"));
+
+        var errors = validator.validate(encoder -> encoder.writeInteger(schema, 42));
+
+        assertThat(errors, hasSize(1));
+        var error = errors.get(0);
+        assertThat(error.path(), equalTo("/"));
+        assertThat(error.message(), equalTo("Custom constraint failed"));
+    }
+
+    @Test
+    public void customConstraintsAreSelective() {
+        var validator = Validator.builder().build();
+        var stringSchema = Schema.createString(ShapeId.from("smithy.CustomTest#SelectiveString"));
+
+        var errors = validator.validate(encoder -> encoder.writeString(stringSchema, "test"));
+
+        assertThat(errors, hasSize(2));
+        assertTrue(errors.stream()
+                .anyMatch(e -> e.message().equals("String-only constraint violated")));
+        assertTrue(errors.stream()
+                .anyMatch(e -> e.message().equals("Custom constraint failed")));
+    }
+
+    @Nested
+    class CustomConstraintsOnNonPrimitiveShapes {
+
+        @Test
+        void appliesOnStructs() {
+            var validator = Validator.builder().build();
+            var structSchema = Schema.structureBuilder(ShapeId.from("smithy.CustomTest#TestStruct"))
+                    .putMember("value", PreludeSchemas.INTEGER)
+                    .build();
+
+            var errors = validator.validate(encoder -> {
+                encoder.writeStruct(structSchema, TestHelper.create(structSchema, (schema, serializer) -> {
+                    serializer.writeInteger(schema.member("value"), 67);
+                }));
+            });
+
+            assertThat(errors, hasSize(3));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/")
+                            && e.message().equals("Custom constraint failed")));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/")
+                            && e.message().equals("Struct-only constraint violated")));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/value")
+                            && e.message().equals("Custom constraint failed")));
+        }
+
+        @Test
+        void appliesOnUnions() {
+            var validator = Validator.builder().build();
+            var unionSchema = Schema.unionBuilder(ShapeId.from("smithy.CustomTest#TestUnion"))
+                    .putMember("stringValue", PreludeSchemas.STRING)
+                    .putMember("intValue", PreludeSchemas.INTEGER)
+                    .build();
+
+            var errors = validator.validate(encoder -> {
+                encoder.writeStruct(unionSchema, TestHelper.create(unionSchema, (schema, serializer) -> {
+                    serializer.writeString(schema.member("stringValue"), "value");
+                }));
+            });
+
+            assertThat(errors, hasSize(4));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/")
+                            && e.message().equals("Custom constraint failed")));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/")
+                            && e.message().equals("Union-only constraint violated")));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/stringValue")
+                            && e.message().equals("Custom constraint failed")));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/stringValue")
+                            && e.message().equals("String-only constraint violated")));
+        }
+
+        @Test
+        void appliesOnLists() {
+            var validator = Validator.builder().build();
+            var listSchema = Schema.listBuilder(ShapeId.from("smithy.CustomTest#TestList"))
+                    .putMember("member", PreludeSchemas.INTEGER)
+                    .build();
+
+            var errors = validator.validate(encoder -> {
+                encoder.writeList(listSchema, null, 2, (state, serializer) -> {
+                    serializer.writeInteger(PreludeSchemas.INTEGER, 67);
+                    serializer.writeInteger(PreludeSchemas.INTEGER, 67);
+                });
+            });
+
+            assertThat(errors, hasSize(2));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/")
+                            && e.message().equals("Custom constraint failed")));
+            assertTrue(errors.stream()
+                    .anyMatch(e -> e.path().equals("/")
+                            && e.message().equals("List-only constraint violated")));
+        }
     }
 
     static Schema createBigRequiredSchema(int totalMembers, int requiredCount, int defaultedCount) {

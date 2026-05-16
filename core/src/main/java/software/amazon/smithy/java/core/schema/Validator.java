@@ -11,7 +11,9 @@ import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import software.amazon.smithy.java.core.serde.ListSerializer;
 import software.amazon.smithy.java.core.serde.MapSerializer;
 import software.amazon.smithy.java.core.serde.SerializationException;
@@ -120,6 +122,29 @@ public final class Validator {
     static final class ShapeValidator implements ShapeSerializer, MapSerializer {
 
         private static final int STARTING_PATH_SIZE = 4;
+        // Lazy initialization of custom constraints per shape type
+        @SuppressWarnings("unchecked")
+        private static final List<CustomConstraint>[] CUSTOM_CONSTRAINTS_BY_TYPE = new List[ShapeType.values().length];
+        private static final boolean HAS_CUSTOM_CONSTRAINTS;
+
+        static {
+            // Load all custom constraints at startup and organize by type
+            var loader = ServiceLoader.load(CustomConstraint.class, CustomConstraint.class.getClassLoader());
+            var anyConstraintsFound = false;
+            for (var constraint : loader) {
+                var types = constraint.appliesTo();
+                for (var type : types) {
+                    var index = type.ordinal();
+                    if (CUSTOM_CONSTRAINTS_BY_TYPE[index] == null) {
+                        CUSTOM_CONSTRAINTS_BY_TYPE[index] = new ArrayList<>();
+                    }
+                    CUSTOM_CONSTRAINTS_BY_TYPE[index].add(constraint);
+                    anyConstraintsFound = true;
+                }
+            }
+            HAS_CUSTOM_CONSTRAINTS = anyConstraintsFound;
+        }
+
         private final int maxAllowedErrors;
         private final int maxDepth;
         private final ListSerializer listValidator;
@@ -224,6 +249,7 @@ public final class Validator {
                 case UNION -> ValidatorOfUnion.validate(this, schema, struct);
                 default -> checkType(schema, ShapeType.STRUCTURE); // this is guaranteed to fail type checking.
             }
+            applyCustomConstraints(schema, struct);
             currentSchema = previousSchema;
             elementCount = previousCount;
         }
@@ -260,6 +286,7 @@ public final class Validator {
 
                 checkListLength(schema, count);
             }
+            applyCustomConstraints(schema, state);
         }
 
         private void checkListLength(Schema schema, int count) {
@@ -297,6 +324,7 @@ public final class Validator {
                 elementCount = previousCount;
                 checkMapLength(schema, count);
             }
+            applyCustomConstraints(schema, state);
         }
 
         private void checkMapLength(Schema schema, int count) {
@@ -328,18 +356,21 @@ public final class Validator {
         @Override
         public void writeBoolean(Schema schema, boolean value) {
             checkType(schema, ShapeType.BOOLEAN);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeByte(Schema schema, byte value) {
             checkType(schema, ShapeType.BYTE);
             validateRange(schema, value, schema.minLongConstraint, schema.maxLongConstraint);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeShort(Schema schema, short value) {
             checkType(schema, ShapeType.SHORT);
             validateRange(schema, value, schema.minLongConstraint, schema.maxLongConstraint);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
@@ -354,24 +385,28 @@ public final class Validator {
                 }
                 default -> checkType(schema, ShapeType.INTEGER); // it's invalid.
             }
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeLong(Schema schema, long value) {
             checkType(schema, ShapeType.LONG);
             validateRange(schema, value, schema.minLongConstraint, schema.maxLongConstraint);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeFloat(Schema schema, float value) {
             checkType(schema, ShapeType.FLOAT);
             validateRange(schema, value, schema.minDoubleConstraint, schema.maxDoubleConstraint);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeDouble(Schema schema, double value) {
             checkType(schema, ShapeType.DOUBLE);
             validateRange(schema, value, schema.minDoubleConstraint, schema.maxDoubleConstraint);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
@@ -383,6 +418,7 @@ public final class Validator {
                     schema.maxRangeConstraint.toBigInteger()) > 0) {
                 emitRangeError(schema, value);
             }
+            applyCustomConstraints(schema, value);
         }
 
         @Override
@@ -393,6 +429,7 @@ public final class Validator {
             } else if (schema.maxRangeConstraint != null && value.compareTo(schema.maxRangeConstraint) > 0) {
                 emitRangeError(schema, value);
             }
+            applyCustomConstraints(schema, value);
         }
 
         @Override
@@ -429,6 +466,7 @@ public final class Validator {
                 }
                 default -> checkType(schema, ShapeType.STRING); // it's invalid, and calling this adds an error.
             }
+            applyCustomConstraints(schema, value);
         }
 
         @Override
@@ -438,16 +476,19 @@ public final class Validator {
             if (length < schema.minLengthConstraint || length > schema.maxLengthConstraint) {
                 addError(new ValidationError.LengthValidationFailure(createPath(), length, schema));
             }
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeTimestamp(Schema schema, Instant value) {
             checkType(schema, ShapeType.TIMESTAMP);
+            applyCustomConstraints(schema, value);
         }
 
         @Override
         public void writeDocument(Schema schema, Document document) {
             checkType(schema, ShapeType.DOCUMENT);
+            applyCustomConstraints(schema, document);
         }
 
         @Override
@@ -486,6 +527,24 @@ public final class Validator {
                 // Stop any further validation if an incorrect type is given. This should only be encountered when data
                 // is emitted from something manually and not from an actual modeled shape.
                 throw new ValidationShortCircuitException();
+            }
+        }
+
+        private void applyCustomConstraints(Schema schema, Object value) {
+            if (!HAS_CUSTOM_CONSTRAINTS) {
+                return;
+            }
+
+            // Get constraints for this specific type
+            var typeConstraints = CUSTOM_CONSTRAINTS_BY_TYPE[schema.type().ordinal()];
+            if (typeConstraints != null) {
+                Supplier<String> pathSupplier = this::createPath;
+                for (var constraint : typeConstraints) {
+                    var validationErrors = constraint.validate(schema, value, pathSupplier);
+                    for (var error : validationErrors) {
+                        addError(error);
+                    }
+                }
             }
         }
     }
