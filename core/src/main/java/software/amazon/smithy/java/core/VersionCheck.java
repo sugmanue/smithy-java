@@ -62,6 +62,7 @@ public final class VersionCheck {
         }
 
         if (modules.isEmpty()) {
+            CHECKED.set(true);
             return;
         }
 
