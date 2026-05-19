@@ -6,16 +6,11 @@
 package software.amazon.smithy.java.client.http.plugins;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import software.amazon.smithy.java.client.core.AutoClientPlugin;
 import software.amazon.smithy.java.client.core.CallContext;
 import software.amazon.smithy.java.client.core.ClientConfig;
 import software.amazon.smithy.java.client.core.interceptors.ClientInterceptor;
 import software.amazon.smithy.java.client.core.interceptors.OutputHook;
-import software.amazon.smithy.java.client.core.settings.ClockSetting;
 import software.amazon.smithy.java.client.http.HttpMessageExchange;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.error.CallException;
@@ -33,6 +28,8 @@ import software.amazon.smithy.utils.SmithyInternalApi;
  */
 @SmithyInternalApi
 public final class ApplyHttpRetryInfoPlugin implements AutoClientPlugin {
+    private static final HeaderName X_AMZ_RETRY_AFTER = HeaderName.of("x-amz-retry-after");
+
     @Override
     public void configureClient(ClientConfig.Builder config) {
         // We can conditionally add the interceptor here because client transport can't change after construction.
@@ -60,7 +57,7 @@ public final class ApplyHttpRetryInfoPlugin implements AutoClientPlugin {
 
     static void applyRetryInfo(HttpResponse response, CallException exception, Context context) {
         // (1) Check with the protocol if the server explicitly wants a retry.
-        if (!applyRetryAfterHeader(response, exception, context)) {
+        if (!applyRetryAfterHeader(response, exception)) {
             if (!applyThrottlingStatusCodes(response, exception)) {
                 // (2) If no retry was detected so far, is it safe to retry because of a 5XX error + idempotency token?
                 if (exception.isRetrySafe() == RetrySafety.MAYBE) {
@@ -85,29 +82,19 @@ public final class ApplyHttpRetryInfoPlugin implements AutoClientPlugin {
         return false;
     }
 
-    // If there's a retry-after header, then the server is telling us it's retryable.
-    private static boolean applyRetryAfterHeader(HttpResponse response, CallException exception, Context context) {
-        var retryAfter = response.headers().firstValue(HeaderName.RETRY_AFTER);
-        if (retryAfter != null) {
-            exception.isThrottle(true);
-            exception.isRetrySafe(RetrySafety.YES);
-            exception.retryAfter(parseRetryAfter(retryAfter, context));
-            return true;
+    // Per SEP: use x-amz-retry-after (integer milliseconds). Ignore standard Retry-After header.
+    private static boolean applyRetryAfterHeader(HttpResponse response, CallException exception) {
+        var xAmzRetryAfter = response.headers().firstValue(X_AMZ_RETRY_AFTER);
+        if (xAmzRetryAfter != null) {
+            try {
+                var millis = Long.parseLong(xAmzRetryAfter);
+                exception.isRetrySafe(RetrySafety.YES);
+                exception.retryAfter(Duration.ofMillis(millis));
+                return true;
+            } catch (NumberFormatException e) {
+                // Invalid value — ignore, fall back to exponential backoff
+            }
         }
-
         return false;
-    }
-
-    private static Duration parseRetryAfter(String retryAfter, Context context) {
-        try {
-            return Duration.of(Integer.parseInt(retryAfter), ChronoUnit.SECONDS);
-        } catch (NumberFormatException e) {
-            // It's not a number, so it must be a http-date like "Wed, 21 Oct 2015 07:28:00 GMT".
-            var date = ZonedDateTime.parse(retryAfter, DateTimeFormatter.RFC_1123_DATE_TIME);
-            // Use the Clock associated with the context, if any, to account for things like clock skew.
-            var clock = context.get(ClockSetting.CLOCK);
-            var now = clock == null ? Instant.now() : clock.instant();
-            return Duration.between(now, date);
-        }
     }
 }

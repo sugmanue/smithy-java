@@ -9,7 +9,9 @@ import static software.amazon.smithy.java.retries.DefaultRetryToken.validateIsPo
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import software.amazon.smithy.java.logging.InternalLogger;
 import software.amazon.smithy.java.retries.api.AcquireInitialTokenRequest;
 import software.amazon.smithy.java.retries.api.AcquireInitialTokenResponse;
@@ -29,6 +31,7 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
     protected final InternalLogger log;
     protected final int maxAttempts;
     protected final ExponentialDelayWithJitter backoffStrategy;
+    protected final ExponentialDelayWithJitter throttlingBackoffStrategy;
     protected final int retryCost;
     protected final int throttlingRetryCost;
     protected final int initialRetryTokens;
@@ -38,7 +41,21 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
     BaseRetryStrategy(InternalLogger log, Builder builder) {
         this.log = log;
         this.maxAttempts = validateIsPositive(builder.maxAttempts, "maxAttempts");
-        this.backoffStrategy = new ExponentialDelayWithJitter(builder.backoffBaseDelay, builder.backoffMaxDelay);
+        if (builder.randomSupplier != null) {
+            this.backoffStrategy = new ExponentialDelayWithJitter(
+                    builder.randomSupplier,
+                    builder.backoffBaseDelay,
+                    builder.backoffMaxDelay);
+            this.throttlingBackoffStrategy = new ExponentialDelayWithJitter(
+                    builder.randomSupplier,
+                    builder.throttlingBackoffBaseDelay,
+                    builder.backoffMaxDelay);
+        } else {
+            this.backoffStrategy = new ExponentialDelayWithJitter(builder.backoffBaseDelay, builder.backoffMaxDelay);
+            this.throttlingBackoffStrategy = new ExponentialDelayWithJitter(
+                    builder.throttlingBackoffBaseDelay,
+                    builder.backoffMaxDelay);
+        }
         this.retryCost = Objects.requireNonNull(builder.retryCost, "retryCost");
         this.throttlingRetryCost = Objects.requireNonNull(builder.throttlingRetryCost, "throttlingRetryCost");
         this.initialRetryTokens = builder.initialRetryTokens;
@@ -140,12 +157,16 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
      * method to compute a different backoff depending on their logic.
      */
     protected Duration computeBackoff(RefreshRetryTokenRequest request, DefaultRetryToken token) {
-        var backoff = backoffStrategy.computeDelay(token.attempt());
+        var isThrottle = treatAsThrottling(request.failure());
+        var strategy = isThrottle ? throttlingBackoffStrategy : backoffStrategy;
+        var backoff = strategy.computeDelay(token.attempt());
         var suggested = request.suggestedDelay();
         if (suggested == null) {
             return backoff;
         }
-        return maxOf(suggested, backoff);
+        // Clamp suggested delay: min bound is t_i, max bound is 5s + t_i
+        var maxBound = backoff.plus(Duration.ofSeconds(5));
+        return minOf(maxOf(suggested, backoff), maxBound);
     }
 
     /**
@@ -183,7 +204,7 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
 
     private AcquireResponse requestAcquireCapacity(RefreshRetryTokenRequest request, DefaultRetryToken token) {
         var tokenBucket = tokenBucketStore.tokenBucketForScope(token.scope());
-        return tokenBucket.tryAcquire(retryCost(request), token);
+        return tokenBucket.tryAcquire(retryCost(request));
     }
 
     private ReleaseResponse releaseTokenBucketCapacity(DefaultRetryToken token) {
@@ -238,6 +259,19 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
         var token = asDefaultRetryToken(request.token());
         if (acquireResponse.acquisitionFailed()) {
             var failure = request.failure();
+            // For long-polling operations, compute backoff delay before returning
+            if (token.isLongPolling()) {
+                var refreshedToken = token.toBuilder()
+                        .increaseAttempt()
+                        .capacityRemaining(acquireResponse.capacityRemaining())
+                        .capacityAcquired(acquireResponse.capacityAcquired())
+                        .addFailure(failure)
+                        .build();
+                var backoff = computeBackoff(request, refreshedToken);
+                var message = acquisitionFailedForLongPollOperationMessage(acquireResponse);
+                log.debug(message, failure);
+                throw new TokenAcquisitionFailedException(message, refreshedToken, failure, backoff);
+            }
             var refreshedToken = token.toBuilder()
                     .capacityRemaining(acquireResponse.capacityRemaining())
                     .capacityAcquired(acquireResponse.capacityAcquired())
@@ -336,6 +370,13 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
         return right;
     }
 
+    static Duration minOf(Duration left, Duration right) {
+        if (left.compareTo(right) <= 0) {
+            return left;
+        }
+        return right;
+    }
+
     static DefaultRetryToken asDefaultRetryToken(RetryToken token) {
         if (token instanceof DefaultRetryToken t) {
             return t;
@@ -363,7 +404,9 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
         protected int initialRetryTokens;
         protected int maxScopes;
         protected Duration backoffBaseDelay;
+        protected Duration throttlingBackoffBaseDelay;
         protected Duration backoffMaxDelay;
+        private Supplier<Random> randomSupplier;
 
         Builder() {
             this.initialRetryTokens = Constants.Standard.INITIAL_RETRY_TOKENS;
@@ -377,6 +420,7 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
             this.initialRetryTokens = strategy.initialRetryTokens;
             this.maxScopes = strategy.maxScopes;
             this.backoffBaseDelay = strategy.backoffStrategy.baseDelay();
+            this.throttlingBackoffBaseDelay = strategy.throttlingBackoffStrategy.baseDelay();
             this.backoffMaxDelay = strategy.backoffStrategy.maxDelay();
         }
 
@@ -404,8 +448,16 @@ abstract class BaseRetryStrategy implements RetryStrategy, Claimable {
             this.backoffBaseDelay = backoffBaseDelay;
         }
 
+        void setThrottlingBackoffBaseDelay(Duration throttlingBackoffBaseDelay) {
+            this.throttlingBackoffBaseDelay = throttlingBackoffBaseDelay;
+        }
+
         void setBackoffMaxDelay(Duration backoffMaxDelay) {
             this.backoffMaxDelay = backoffMaxDelay;
+        }
+
+        void setRandomSupplier(Supplier<Random> randomSupplier) {
+            this.randomSupplier = randomSupplier;
         }
     }
 }

@@ -46,6 +46,7 @@ public final class StandardRetryStrategy extends BaseRetryStrategy {
         return new Builder()
                 .maxAttempts(Constants.Standard.MAX_ATTEMPTS)
                 .backoffBaseDelay(Constants.Standard.BASE_DELAY)
+                .throttlingBackoffBaseDelay(Constants.Standard.THROTTLING_BASE_DELAY)
                 .backoffMaxBackoff(Constants.Standard.MAX_BACKOFF)
                 .retryCost(Constants.Standard.RETRY_COST)
                 .throttlingRetryCost(Constants.Standard.THROTTLING_RETRY_COST)
@@ -115,6 +116,17 @@ public final class StandardRetryStrategy extends BaseRetryStrategy {
          */
         public Builder backoffBaseDelay(Duration baseDelay) {
             setBackoffBaseDelay(baseDelay);
+            return this;
+        }
+
+        /**
+         * Set the base delay for exponential backoff on throttling errors.
+         *
+         * @param baseDelay the throttling base delay.
+         * @return the builder.
+         */
+        public Builder throttlingBackoffBaseDelay(Duration baseDelay) {
+            setThrottlingBackoffBaseDelay(baseDelay);
             return this;
         }
 

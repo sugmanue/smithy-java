@@ -48,8 +48,8 @@ final class ExponentialDelayWithJitter {
         if (delay <= 0) {
             return Duration.ZERO;
         }
-        var randInt = randomSupplier.get().nextInt(delay);
-        return Duration.ofMillis(randInt);
+        var jitter = randomSupplier.get().nextDouble();
+        return Duration.ofMillis((long) (jitter * delay));
     }
 
     int calculateExponentialDelay(int attempt) {
