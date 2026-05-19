@@ -80,12 +80,13 @@ public class RetryStrategyTestCommon {
                         .expectedLastCapacityAcquired(0)
                         .expectedCapacityRemaining(10)
                         .build(),
-                builder("Exhausts tokens with retryable yet succeeds for long polling")
-                        .statuses(createExhaustingRetryableCallStatusesWithFinalSuccess())
-                        .expectSuccess(true)
+                builder("Exhausts tokens with retryable yet backs off for long polling")
+                        .statuses(createExhaustingRetryableCallStatuses())
+                        .expectSuccess(false)
                         .isLongPolling(true)
                         .expectedLastCapacityAcquired(0)
-                        .expectedCapacityRemaining(11) // returns 1 upon success
+                        .expectedCapacityRemaining(10)
+                        .expectDelay(true)
                         .build(),
                 builder("Exhausts tokens with throttling")
                         .statuses(createExhaustingThrottlingCallStatuses())
@@ -93,12 +94,13 @@ public class RetryStrategyTestCommon {
                         .expectedLastCapacityAcquired(5)
                         .expectedCapacityRemaining(0)
                         .build(),
-                builder("Exhausts tokens with throttling yet succeeds for long polling")
-                        .statuses(createExhaustingThrottlingCallStatusesWithFinalSuccess())
-                        .expectSuccess(true)
+                builder("Exhausts tokens with throttling yet backs off for long polling")
+                        .statuses(createExhaustingThrottlingCallStatusesForLongPolling())
+                        .expectSuccess(false)
                         .isLongPolling(true)
                         .expectedLastCapacityAcquired(0)
-                        .expectedCapacityRemaining(1) // returns 1 upon success
+                        .expectedCapacityRemaining(0)
+                        .expectDelay(true)
                         .build());
     }
 
@@ -119,12 +121,6 @@ public class RetryStrategyTestCommon {
         return result;
     }
 
-    static List<CallStatus> createExhaustingRetryableCallStatusesWithFinalSuccess() {
-        var result = createExhaustingRetryableCallStatuses();
-        result.add(CallStatus.SUCCESS);
-        return result;
-    }
-
     static List<CallStatus> createExhaustingThrottlingCallStatuses() {
         var result = new ArrayList<CallStatus>();
         for (var idx = 0; idx < 99; idx++) {
@@ -136,10 +132,18 @@ public class RetryStrategyTestCommon {
         return result;
     }
 
-    static List<CallStatus> createExhaustingThrottlingCallStatusesWithFinalSuccess() {
-        var result = createExhaustingThrottlingCallStatuses();
+    // After 99 rounds of (THROTTLED, THROTTLED, SUCCESS), net = 500 - 99*5 = 5.
+    // Then one more THROTTLED acquires 5 → 0 remaining.
+    // Then one more THROTTLED cannot be acquired (0 < 5).
+    static List<CallStatus> createExhaustingThrottlingCallStatusesForLongPolling() {
+        var result = new ArrayList<CallStatus>();
+        for (var idx = 0; idx < 99; idx++) {
+            result.add(CallStatus.THROTTLED);
+            result.add(CallStatus.THROTTLED);
+            result.add(CallStatus.SUCCESS);
+        }
         result.add(CallStatus.THROTTLED);
-        result.add(CallStatus.SUCCESS);
+        result.add(CallStatus.THROTTLED);
         return result;
     }
 
@@ -150,6 +154,7 @@ public class RetryStrategyTestCommon {
         final Integer expectedCapacityAcquired;
         final Integer expectedCapacityRemaining;
         final int flags;
+        final boolean expectDelay;
 
         TestCase(TestCaseBuilder builder) {
             this.name = builder.name;
@@ -158,6 +163,7 @@ public class RetryStrategyTestCommon {
             this.expectedCapacityAcquired = builder.expectedCapacityAcquired;
             this.expectedCapacityRemaining = builder.expectedCapacityRemaining;
             this.flags = builder.flags;
+            this.expectDelay = builder.expectDelay;
         }
 
         public void run(BaseRetryStrategy strategy) {
@@ -182,6 +188,11 @@ public class RetryStrategyTestCommon {
                             throw new AssertionError("Expected token acquisition failed", e);
                         }
                         token = e.token();
+                        if (expectDelay) {
+                            if (e.delay() == null || e.delay().isZero()) {
+                                throw new AssertionError("Expected non-zero delay for long-polling backoff");
+                            }
+                        }
                         if (idx != statuses.size() - 1) {
                             throw new AssertionError("Test case not setup correctly, " +
                                     "not all statuses were covered, remaining: " +
@@ -226,6 +237,7 @@ public class RetryStrategyTestCommon {
         Integer expectedCapacityAcquired;
         Integer expectedCapacityRemaining;
         int flags = 0;
+        boolean expectDelay = false;
 
         TestCaseBuilder(String name) {
             this.name = name;
@@ -260,6 +272,11 @@ public class RetryStrategyTestCommon {
             if (isLongPolling) {
                 this.flags = this.flags | AcquireInitialTokenFlags.IS_LONG_POLLING;
             }
+            return this;
+        }
+
+        public TestCaseBuilder expectDelay(boolean expectDelay) {
+            this.expectDelay = expectDelay;
             return this;
         }
 

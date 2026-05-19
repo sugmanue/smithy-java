@@ -27,7 +27,7 @@ final class TokenBucket {
      * Try to acquire a certain number of tokens from this bucket. If there aren't sufficient tokens in this bucket then
      * {@link AcquireResponse#acquisitionFailed()} returns {@code true}.
      */
-    AcquireResponse tryAcquire(int amountToAcquire, DefaultRetryToken token) {
+    AcquireResponse tryAcquire(int amountToAcquire) {
         if (amountToAcquire < 0) {
             throw new IllegalArgumentException("amountToAcquire cannot be negative");
         }
@@ -42,8 +42,7 @@ final class TokenBucket {
             currentCapacity = capacity.get();
             newCapacity = currentCapacity - amountToAcquire;
             if (newCapacity < 0) {
-                var acquisitionFailed = !token.isLongPolling();
-                return new AcquireResponse(initialRetryTokens, amountToAcquire, 0, currentCapacity, acquisitionFailed);
+                return new AcquireResponse(initialRetryTokens, amountToAcquire, 0, currentCapacity, true);
             }
         } while (!capacity.compareAndSet(currentCapacity, newCapacity));
 

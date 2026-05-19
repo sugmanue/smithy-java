@@ -226,13 +226,26 @@ final class RateLimiterTokenBucket {
         }
 
         double cubicSuccess(double timestamp) {
-            var delta = timestamp - this.lastThrottleTime;
-            return (SCALE_CONSTANT * Math.pow(delta - this.timeWindow, 3)) + this.lastMaxRate;
+            return computeCubicSuccess(this.lastMaxRate, this.lastThrottleTime, timestamp);
         }
 
         double cubicThrottle(double rateToUse) {
-            return rateToUse * BETA;
+            return computeCubicThrottle(rateToUse);
         }
+    }
+
+    // visible for testing
+    static double computeCubicSuccess(double lastMaxRate, double lastThrottleTime, double timestamp) {
+        double timeWindow = Math.pow(
+                (lastMaxRate * (1 - TransientState.BETA)) / TransientState.SCALE_CONSTANT,
+                1.0 / 3);
+        double delta = timestamp - lastThrottleTime;
+        return (TransientState.SCALE_CONSTANT * Math.pow(delta - timeWindow, 3)) + lastMaxRate;
+    }
+
+    // visible for testing
+    static double computeCubicThrottle(double rateToUse) {
+        return rateToUse * TransientState.BETA;
     }
 
     /**

@@ -395,6 +395,10 @@ final class ClientPipeline<RequestT, ResponseT> {
                 return retry(call, request, acquireResult.token(), acquireResult.delay());
             } catch (TokenAcquisitionFailedException tafe) {
                 // 9.b If InterceptorContext.response() is an unretryable failure, continue to step 10.
+                // For long-polling operations, backoff before returning.
+                if (tafe.delay() != null && !tafe.delay().isZero()) {
+                    sleep(tafe.delay());
+                }
                 LOGGER.debug("Cannot acquire a retry token: {}", tafe);
             }
         }

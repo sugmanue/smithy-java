@@ -10,15 +10,11 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.java.client.core.CallContext;
-import software.amazon.smithy.java.client.core.settings.ClockSetting;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.core.error.CallException;
 import software.amazon.smithy.java.http.api.HttpHeaders;
@@ -26,8 +22,42 @@ import software.amazon.smithy.java.http.api.HttpResponse;
 import software.amazon.smithy.java.retries.api.RetrySafety;
 
 public class ApplyHttpRetryInfoPluginTest {
+
     @Test
-    public void appliesRetryAfterHeader() {
+    public void appliesXAmzRetryAfterHeader() {
+        var response = HttpResponse.create()
+                .setStatusCode(500)
+                .setHeaders(HttpHeaders.of(Map.of("x-amz-retry-after", List.of("1500"))))
+                .toUnmodifiable();
+        var e = new CallException("err");
+        var context = Context.create();
+
+        ApplyHttpRetryInfoPlugin.applyRetryInfo(response, e, context);
+
+        assertThat(e.isRetrySafe(), is(RetrySafety.YES));
+        assertThat(e.retryAfter(), equalTo(Duration.ofMillis(1500)));
+    }
+
+    @Test
+    public void ignoresInvalidXAmzRetryAfterHeader() {
+        var response = HttpResponse.create()
+                .setStatusCode(500)
+                .setHeaders(HttpHeaders.of(Map.of("x-amz-retry-after", List.of("invalid"))))
+                .toUnmodifiable();
+        var e = new CallException("err");
+        var context = Context.create();
+        context.put(CallContext.IDEMPOTENCY_TOKEN, "foo");
+
+        ApplyHttpRetryInfoPlugin.applyRetryInfo(response, e, context);
+
+        // Falls through to normal 5xx + idempotency handling
+        assertThat(e.isRetrySafe(), is(RetrySafety.YES));
+        assertThat(e.retryAfter(), nullValue());
+    }
+
+    @Test
+    public void ignoresStandardRetryAfterHeader() {
+        // SEP: SDKs MUST ignore the standard HTTP Retry-After header
         var response = HttpResponse.create()
                 .setStatusCode(500)
                 .setHeaders(HttpHeaders.of(Map.of("retry-after", List.of("10"))))
@@ -37,26 +67,9 @@ public class ApplyHttpRetryInfoPluginTest {
 
         ApplyHttpRetryInfoPlugin.applyRetryInfo(response, e, context);
 
-        assertThat(e.isRetrySafe(), is(RetrySafety.YES));
-        assertThat(e.isThrottle(), is(true));
-        assertThat(e.retryAfter(), equalTo(Duration.ofSeconds(10)));
-    }
-
-    @Test
-    public void appliesRetryAfterHeaderDate() {
-        var response = HttpResponse.create()
-                .setStatusCode(500)
-                .setHeaders(HttpHeaders.of(Map.of("retry-after", List.of("Wed, 21 Oct 2015 07:28:00 GMT"))))
-                .toUnmodifiable();
-        var e = new CallException("err");
-        var context = Context.create();
-        context.put(ClockSetting.CLOCK, Clock.fixed(Instant.parse("2015-10-21T05:28:00Z"), ZoneId.of("UTC")));
-
-        ApplyHttpRetryInfoPlugin.applyRetryInfo(response, e, context);
-
-        assertThat(e.isRetrySafe(), is(RetrySafety.YES));
-        assertThat(e.isThrottle(), is(true));
-        assertThat(e.retryAfter(), equalTo(Duration.ofHours(2)));
+        // Standard Retry-After is ignored, falls through to non-retryable (no idempotency token)
+        assertThat(e.isRetrySafe(), is(RetrySafety.NO));
+        assertThat(e.retryAfter(), nullValue());
     }
 
     @Test

@@ -11,14 +11,13 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Random;
-import java.util.function.Function;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class ExponentialDelayWithJitterTest {
-    static final ComputedNextInt MIN_VALUE_RND = new ComputedNextInt(bound -> 0);
-    static final ComputedNextInt MID_VALUE_RND = new ComputedNextInt(bound -> bound / 2);
-    static final ComputedNextInt MAX_VALUE_RND = new ComputedNextInt(bound -> bound - 1);
+    static final ComputedNextDouble MIN_VALUE_RND = new ComputedNextDouble(0.0);
+    static final ComputedNextDouble MID_VALUE_RND = new ComputedNextDouble(0.5);
+    static final ComputedNextDouble MAX_VALUE_RND = new ComputedNextDouble(1.0);
     static final Duration BASE_DELAY = Duration.ofMillis(23);
     static final Duration MAX_DELAY = Duration.ofSeconds(20);
 
@@ -30,7 +29,7 @@ class ExponentialDelayWithJitterTest {
 
     static Collection<TestCase> parameters() {
         return Arrays.asList(
-                // --- Using random that returns: bound - 1
+                // --- Using random that returns: 1.0 (max jitter)
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(1)
@@ -38,28 +37,28 @@ class ExponentialDelayWithJitterTest {
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(2)
-                        .expectDelayInMs(22),
+                        .expectDelayInMs(23),
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(3)
-                        .expectDelayInMs(45),
+                        .expectDelayInMs(46),
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(5)
-                        .expectDelayInMs(183),
+                        .expectDelayInMs(184),
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(7)
-                        .expectDelayInMs(735),
+                        .expectDelayInMs(736),
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(11)
-                        .expectDelayInMs(11775),
+                        .expectDelayInMs(11776),
                 new TestCase()
                         .configureRandom(MAX_VALUE_RND)
                         .givenAttempt(13)
-                        .expectDelayInMs(19999),
-                // --- Using random that returns: bound / 2
+                        .expectDelayInMs(20000),
+                // --- Using random that returns: 0.5 (mid jitter)
                 new TestCase()
                         .configureRandom(MID_VALUE_RND)
                         .givenAttempt(1)
@@ -88,7 +87,7 @@ class ExponentialDelayWithJitterTest {
                         .configureRandom(MID_VALUE_RND)
                         .givenAttempt(13)
                         .expectDelayInMs(10000),
-                // --- Using random that returns: 0
+                // --- Using random that returns: 0.0 (no jitter)
                 new TestCase()
                         .configureRandom(MIN_VALUE_RND)
                         .givenAttempt(1)
@@ -149,16 +148,16 @@ class ExponentialDelayWithJitterTest {
         }
     }
 
-    static class ComputedNextInt extends Random {
-        final Function<Integer, Integer> compute;
+    static class ComputedNextDouble extends Random {
+        final double value;
 
-        ComputedNextInt(Function<Integer, Integer> compute) {
-            this.compute = compute;
+        ComputedNextDouble(double value) {
+            this.value = value;
         }
 
         @Override
-        public int nextInt(int bound) {
-            return compute.apply(bound);
+        public double nextDouble() {
+            return value;
         }
     }
 }

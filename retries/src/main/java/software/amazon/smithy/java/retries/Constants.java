@@ -24,6 +24,7 @@ final class Constants {
      */
     static final class Standard {
         static final Duration BASE_DELAY = Duration.ofMillis(50);
+        static final Duration THROTTLING_BASE_DELAY = Duration.ofMillis(1000);
         static final Duration MAX_BACKOFF = Duration.ofSeconds(20);
         static final int MAX_ATTEMPTS = 3;
         static final int RETRY_COST = 14;
