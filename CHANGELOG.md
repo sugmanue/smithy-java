@@ -1,5 +1,47 @@
 # Change Log
 
+## 1.2.0 (5/20/2026)
+> [!IMPORTANT]
+> All client modules are considered stable.  Some modules, including
+> server, CLI, and MCP, are still in developer-preview and may contain
+> bugs.  No guarantee is made about their API stability. Unstable
+> modules are marked with a warning in their `README.md` and with the
+> `@SmithyUnstableApi` annotation in their `package-info.java`.
+
+### Features
+- Added custom constraints validation support for shapes. ([#1171](https://github.com/smithy-lang/smithy-java/pull/1171))
+- Added `McpServerInterceptor` with scoped hooks for MCP servers. ([#1174](https://github.com/smithy-lang/smithy-java/pull/1174))
+- Added `AuthScheme` and `IdentityResolver` support to `HttpMcpProxy`. ([#1169](https://github.com/smithy-lang/smithy-java/pull/1169))
+- Inferred MCP `ToolAnnotations` from `@readonly` and `@idempotent` traits. ([#1157](https://github.com/smithy-lang/smithy-java/pull/1157))
+- Added support for Smithy RPC v2 JSON protocol. ([#1092](https://github.com/smithy-lang/smithy-java/pull/1092))
+- Added support for EC2 Query protocol. ([#1160](https://github.com/smithy-lang/smithy-java/pull/1160))
+- Implemented standard and adaptive retry strategies. ([#1149](https://github.com/smithy-lang/smithy-java/pull/1149))
+- Added a mechanism to avoid mixing versions for a client. ([#1167](https://github.com/smithy-lang/smithy-java/pull/1167))
+- Added service schema to `ProtocolSettings` for service-level traits. ([#1166](https://github.com/smithy-lang/smithy-java/pull/1166))
+- Added AWS and EC2 Query schema extensions. ([#1187](https://github.com/smithy-lang/smithy-java/pull/1187))
+
+### Bug Fixes
+- Fixed `DateTimeException` in CBOR timestamp deserialization. ([#1183](https://github.com/smithy-lang/smithy-java/pull/1183))
+- Used deferred writes to avoid interpreting dollar sign as format. ([#1191](https://github.com/smithy-lang/smithy-java/pull/1191))
+- Fixed query protocols to ignore the body if the output schema has the unit type trait. ([#1173](https://github.com/smithy-lang/smithy-java/pull/1173))
+- Fixed javadoc formatting. ([#1168](https://github.com/smithy-lang/smithy-java/pull/1168))
+- Added setting `integrationSettings` to `CodegenDirector` when codegen is being executed. ([#1151](https://github.com/smithy-lang/smithy-java/pull/1151))
+- Added explicit dependency on `framework-errors` in codegen-plugin. ([#1153](https://github.com/smithy-lang/smithy-java/pull/1153))
+
+### Improvements
+- Optimized HTTP bindings ([#1194](https://github.com/smithy-lang/smithy-java/pull/1194), [#1192](https://github.com/smithy-lang/smithy-java/pull/1192), [#1190](https://github.com/smithy-lang/smithy-java/pull/1190))
+- Optimized CBOR codec. ([#1183](https://github.com/smithy-lang/smithy-java/pull/1183))
+- Optimized query and URI encoding/validation. ([#1190](https://github.com/smithy-lang/smithy-java/pull/1190))
+- Cached struct payload check for HTTP bindings. ([#1189](https://github.com/smithy-lang/smithy-java/pull/1189))
+- Optimized JSON codec. ([#1148](https://github.com/smithy-lang/smithy-java/pull/1148))
+- Improved JDK HTTP client transport performance. ([#1163](https://github.com/smithy-lang/smithy-java/pull/1163))
+- Optimized HTTP binding and XML overhead. ([#1182](https://github.com/smithy-lang/smithy-java/pull/1182))
+- Pooled HTTP codec path and cached empty-body output. ([#1182](https://github.com/smithy-lang/smithy-java/pull/1182))
+- Improved codegen performance. ([#1177](https://github.com/smithy-lang/smithy-java/pull/1177))
+
+### Other
+- Marked `CborSchemaExtensions` as internal. ([#1183](https://github.com/smithy-lang/smithy-java/pull/1183))
+
 ## 1.1.0 (4/8/2026)
 > [!IMPORTANT]
 > All client modules are considered stable.  Some modules, including
