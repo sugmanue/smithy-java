@@ -30,7 +30,6 @@ import software.amazon.smithy.utils.StringUtils;
  */
 @SmithyUnstableApi
 public final class JavaWriter extends DeferredSymbolWriter<JavaWriter, JavaImportContainer> {
-    private static final char PLACEHOLDER_FORMAT_CHAR = '£';
     private final String packageNamespace;
     private final JavaCodegenSettings settings;
     private final String filename;
@@ -81,19 +80,12 @@ public final class JavaWriter extends DeferredSymbolWriter<JavaWriter, JavaImpor
         }
 
         putNameContext();
-        setExpressionStart(PLACEHOLDER_FORMAT_CHAR);
         String header = settings.header();
         String headerPrefix = (header != null && !header.isEmpty()) ? header + "\n" : "";
-        return format(
-                """
-                        £Lpackage £L;
-
-                        £L
-                        £L""",
-                headerPrefix,
-                packageNamespace,
-                getImportContainer(),
-                super.toString());
+        return headerPrefix
+                + "package " + packageNamespace + ";\n\n"
+                + getImportContainer() + "\n"
+                + super.toString();
     }
 
     /**
@@ -101,8 +93,7 @@ public final class JavaWriter extends DeferredSymbolWriter<JavaWriter, JavaImpor
      */
     public String toContentString() {
         putNameContext();
-        setExpressionStart(PLACEHOLDER_FORMAT_CHAR);
-        return format("£L", super.toString());
+        return super.toString();
     }
 
     /**
@@ -228,9 +219,10 @@ public final class JavaWriter extends DeferredSymbolWriter<JavaWriter, JavaImpor
             addImport(normalizedSymbol);
             addToSymbolTable(normalizedSymbol);
 
-            // Return a placeholder value that will be filled when toString is called
+            // Return a deferred value that resolves the type name at toString() time
             // [] is replaced with "Array" to ensure array types don't break formatter.
-            return format("$L{$L:L}", PLACEHOLDER_FORMAT_CHAR, symbol.getFullName().replace("[]", "Array"));
+            String fullName = symbol.getFullName().replace("[]", "Array");
+            return defer(() -> format("${" + fullName + ":L}"));
         }
     }
 
