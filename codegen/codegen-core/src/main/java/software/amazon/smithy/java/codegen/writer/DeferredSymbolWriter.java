@@ -25,11 +25,6 @@ public abstract class DeferredSymbolWriter<W extends SymbolWriter<W, I>, I exten
         super(importContainer);
     }
 
-    @Override
-    public String toString() {
-        return format(super.toString());
-    }
-
     /**
      * Add symbol to symbol table, so potential type name conflicts can be detected and
      * handled.
