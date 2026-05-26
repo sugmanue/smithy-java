@@ -12,6 +12,7 @@ extra["moduleName"] = "software.amazon.smithy.java.core"
 
 dependencies {
     api(project(":io"))
+    api(project(":version-spi"))
     api(project(":retries-api"))
     api(libs.smithy.model)
     implementation(project(":logging"))
