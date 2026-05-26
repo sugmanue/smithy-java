@@ -52,15 +52,13 @@ afterEvaluate {
     }
 
     // Generate a SmithyVersionProvider SPI implementation for this module.
-    if (!project.plugins.hasPlugin("software.amazon.smithy.gradle.smithy-jar")) {
-        val dependsOnCore = project.path == ":core" || project.configurations.getByName("compileClasspath")
-            .resolvedConfiguration.resolvedArtifacts.any {
-                it.moduleVersion.id.group == "software.amazon.smithy.java" && it.moduleVersion.id.name == "core"
-            }
+    if (!project.plugins.hasPlugin("software.amazon.smithy.gradle.smithy-jar") && project.path != ":version-spi") {
+        dependencies {
+            add("implementation", project(":version-spi"))
+        }
         val generateVersionProvider = tasks.register<GenerateVersionProviderTask>("generateVersionProvider") {
             this.moduleName = moduleName
             this.moduleVersion = smithyJavaVersion
-            this.generateInterface = !dependsOnCore
         }
         sourceSets["main"].java.srcDir(generateVersionProvider.map { it.outputDir.resolve("java") })
         sourceSets["main"].resources.srcDir(generateVersionProvider.map { it.outputDir.resolve("resources") })

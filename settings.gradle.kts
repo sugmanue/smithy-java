@@ -21,6 +21,7 @@ include(":core")
 include(":dynamic-schemas")
 include(":io")
 include(":logging")
+include(":version-spi")
 
 // CLI
 include(":cli")
