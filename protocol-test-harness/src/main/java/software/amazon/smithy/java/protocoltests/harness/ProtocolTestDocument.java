@@ -188,6 +188,8 @@ public final class ProtocolTestDocument implements Document {
         return node.asNumberNode()
                 .map(NumberNode::getValue)
                 .map(ProtocolTestDocument::readNumberTimestamp)
+                .or(() -> node.asStringNode()
+                        .map(s -> Instant.parse(s.getValue())))
                 .orElseGet(Document.super::asTimestamp);
     }
 
