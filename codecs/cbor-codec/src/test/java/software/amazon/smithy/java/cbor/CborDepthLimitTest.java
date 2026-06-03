@@ -39,8 +39,8 @@ class CborDepthLimitTest {
         int pos = 0;
         for (int i = 0; i < depth; i++) {
             payload[pos++] = (byte) 0xBF; // start map
-            payload[pos++] = 0x61;         // text string length 1
-            payload[pos++] = 0x61;         // 'a'
+            payload[pos++] = 0x61; // text string length 1
+            payload[pos++] = 0x61; // 'a'
         }
         payload[pos++] = 0x01; // integer 1 as the innermost value
         for (int i = 0; i < depth; i++) {
@@ -99,12 +99,15 @@ class CborDepthLimitTest {
     void shallowPayloadSucceeds() {
         // {"a": [1, 2, 3]}
         byte[] payload = {
-            (byte) 0xBF,       // start map
-            0x61, 0x61,        // key "a"
-            (byte) 0x9F,       // start array
-            0x01, 0x02, 0x03,  // integers 1, 2, 3
-            (byte) 0xFF,       // end array
-            (byte) 0xFF        // end map
+                (byte) 0xBF, // start map
+                0x61,
+                0x61, // key "a"
+                (byte) 0x9F, // start array
+                0x01,
+                0x02,
+                0x03, // integers 1, 2, 3
+                (byte) 0xFF, // end array
+                (byte) 0xFF // end map
         };
         var de = Rpcv2CborCodec.builder().build().createDeserializer(payload);
         assertNotNull(de.readDocument());
