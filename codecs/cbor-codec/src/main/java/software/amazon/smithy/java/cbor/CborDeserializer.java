@@ -27,6 +27,7 @@ import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.document.Document;
 
 final class CborDeserializer implements ShapeDeserializer {
+    private static final int MAX_DEPTH = 1000;
 
     static final class Token {
         public static final byte TAG_FLAG = 1 << 4;
@@ -145,12 +146,14 @@ final class CborDeserializer implements ShapeDeserializer {
     private int itemLength = 0;
     private int overhead = 0; // overhead is [0,8]
     private boolean readingTag = false;
+    private int depth;
 
     CborDeserializer(byte[] payload, CborSettings settings) {
         this.payload = payload;
         this.settings = settings;
         this.end = payload.length;
         this.idx = 0;
+        this.depth = 0;
         advance();
     }
 
@@ -665,13 +668,22 @@ final class CborDeserializer implements ShapeDeserializer {
             case Token.POS_BIGINT, Token.NEG_BIGINT -> Document.of(readBigInteger(null));
             case Token.BIG_DECIMAL -> Document.of(readBigDecimal(null));
             case Token.START_ARRAY -> {
+                depth++;
+                if (depth > MAX_DEPTH) {
+                    throw new SerializationException("Maximum nesting depth exceeded: " + MAX_DEPTH);
+                }
                 List<Document> values = new ArrayList<>();
                 for (token = advance(); token != Token.END_ARRAY; token = advance()) {
                     values.add(readDocument());
                 }
+                depth--;
                 yield Document.of(values);
             }
             case Token.START_OBJECT -> {
+                depth++;
+                if (depth > MAX_DEPTH) {
+                    throw new SerializationException("Maximum nesting depth exceeded: " + MAX_DEPTH);
+                }
                 Map<String, Document> values = new LinkedHashMap<>();
                 for (token = advance(); token != Token.END_OBJECT; token = advance()) {
                     if (token != Token.KEY) {
@@ -682,6 +694,7 @@ final class CborDeserializer implements ShapeDeserializer {
                     advance();
                     values.put(key, readDocument());
                 }
+                depth--;
                 yield CborDocuments.of(values, settings);
             }
             default -> throw new SerializationException("Unexpected token: " + Token.name(token));
@@ -712,7 +725,10 @@ final class CborDeserializer implements ShapeDeserializer {
             readStructEmpty(schema, token);
             return;
         }
-
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw new SerializationException("Maximum nesting depth exceeded: " + MAX_DEPTH);
+        }
         Schema structSchema = schema.isMember() ? schema.memberTarget() : schema;
         var ext = structSchema.getExtension(CborSchemaExtensions.KEY);
         CborMemberLookup lookup = ext != null ? ext.memberLookup() : null;
@@ -767,6 +783,7 @@ final class CborDeserializer implements ShapeDeserializer {
 
             consumer.accept(state, member, this);
         }
+        depth--;
     }
 
     private void readStructEmpty(Schema schema, byte token) {
@@ -814,6 +831,10 @@ final class CborDeserializer implements ShapeDeserializer {
 
     @Override
     public <T> void readList(Schema schema, T state, ListMemberConsumer<T> consumer) {
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw new SerializationException("Maximum nesting depth exceeded: " + MAX_DEPTH);
+        }
         byte token = this.token;
         if (token != Token.START_ARRAY) {
             throw badType("list", token);
@@ -822,6 +843,7 @@ final class CborDeserializer implements ShapeDeserializer {
         for (token = advance(); token != Token.END_ARRAY; token = advance()) {
             consumer.accept(state, this);
         }
+        depth--;
     }
 
     @Override
@@ -831,6 +853,10 @@ final class CborDeserializer implements ShapeDeserializer {
 
     @Override
     public <T> void readStringMap(Schema schema, T state, MapMemberConsumer<String, T> consumer) {
+        depth++;
+        if (depth > MAX_DEPTH) {
+            throw new SerializationException("Maximum nesting depth exceeded: " + MAX_DEPTH);
+        }
         byte token = this.token;
         if (token != Token.START_OBJECT) {
             throw badType("struct", token);
@@ -844,6 +870,7 @@ final class CborDeserializer implements ShapeDeserializer {
             advance();
             consumer.accept(state, key, this);
         }
+        depth--;
     }
 
     @Override
