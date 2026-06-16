@@ -108,6 +108,7 @@ public final class RestJsonClientProtocol extends HttpBindingClientProtocol<AwsE
                 operation,
                 payloadCodec(),
                 payloadMediaType(),
+                false,
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 

@@ -172,6 +172,7 @@ class AwsEventShapeEncoderTest {
                 operation.outputStreamMember(), // event schema
                 createJsonCodec(), // codec
                 "text/json",
+                false,
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 

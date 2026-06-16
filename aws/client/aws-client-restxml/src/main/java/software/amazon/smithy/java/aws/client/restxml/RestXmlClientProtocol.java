@@ -94,6 +94,7 @@ public final class RestXmlClientProtocol extends HttpBindingClientProtocol<AwsEv
                 operation,
                 payloadCodec(),
                 payloadMediaType(),
+                false,
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 
