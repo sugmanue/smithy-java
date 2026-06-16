@@ -40,6 +40,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     private final InitialEventType initialEventType;
     private final Codec codec;
     private final String payloadMediaType;
+    private final boolean emitEmptyPayload;
     private final Set<String> possibleTypes;
     private final Map<ShapeId, Schema> possibleExceptions;
     private final Function<Throwable, EventStreamingException> exceptionHandler;
@@ -49,11 +50,13 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             Schema eventSchema,
             Codec codec,
             String payloadMediaType,
+            boolean emitEmptyPayload,
             Function<Throwable, EventStreamingException> exceptionHandler
     ) {
         this.initialEventType = Objects.requireNonNull(initialEventType, "initialEventType");
         this.codec = Objects.requireNonNull(codec, "codec");
         this.payloadMediaType = Objects.requireNonNull(payloadMediaType, "payloadMediaType");
+        this.emitEmptyPayload = emitEmptyPayload;
         this.possibleTypes = possibleTypes(Objects.requireNonNull(eventSchema, "eventSchema"),
                 initialEventType.value());
         this.possibleExceptions = possibleExceptions(Objects.requireNonNull(eventSchema, "eventSchema"));
@@ -116,7 +119,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             Holder<String> contentEncodingHolder
     ) {
         var out = new ByteArrayOutputStream();
-        var baseSerializer = createSerializer(out, codec, headers, contentEncodingHolder);
+        var baseSerializer = createSerializer(out, codec, headers, emitEmptyPayload, contentEncodingHolder);
         if (isInitialRequest(item.schema())) {
             // The initial event is serialized fully instead of just a single member as for events.
             typeHolder.set(initialEventType.value());
@@ -148,7 +151,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             Holder<String> contentEncodingHolder
     ) {
         var out = new ByteArrayOutputStream();
-        var baseSerializer = createSerializer(out, codec, headers, contentEncodingHolder);
+        var baseSerializer = createSerializer(out, codec, headers, emitEmptyPayload, contentEncodingHolder);
         item.serialize(baseSerializer);
         return out.toByteArray();
     }
@@ -186,10 +189,11 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             OutputStream out,
             Codec codec,
             HeadersBuilder headers,
+            boolean emitEmptyPayload,
             Holder<String> contentTypeHolder
     ) {
         var eventSerializer = new EventHeaderSerializer(headers);
-        return new EventSerializer(out, codec, eventSerializer, contentTypeHolder);
+        return new EventSerializer(out, codec, eventSerializer, emitEmptyPayload, contentTypeHolder);
     }
 
     /**
@@ -292,17 +296,20 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         private final OutputStream out;
         private final Codec codec;
         private final EventHeaderSerializer headerSerializer;
+        private final boolean emitEmptyPayload;
         private final Holder<String> contentTypeHolder;
 
         public EventSerializer(
                 OutputStream out,
                 Codec codec,
                 EventHeaderSerializer headerSerializer,
+                boolean emitEmptyPayload,
                 Holder<String> contentTypeHolder
         ) {
             this.out = out;
             this.codec = codec;
             this.headerSerializer = headerSerializer;
+            this.emitEmptyPayload = emitEmptyPayload;
             this.contentTypeHolder = contentTypeHolder;
         }
 
@@ -314,7 +321,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                             .serializeMembers(serializer);
                 }
             } else {
-                if (hasPayloadMembers(schema)) {
+                if (emitEmptyPayload || hasPayloadMembers(schema)) {
                     try (var serializer = codec.createSerializer(out)) {
                         ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isPayloadMember)
                                 .serialize(serializer);

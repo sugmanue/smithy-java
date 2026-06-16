@@ -131,6 +131,7 @@ abstract sealed class AwsJsonProtocol extends HttpClientProtocol permits AwsJson
         return AwsEventEncoderFactory.forInputStream(operation,
                 payloadCodec(),
                 contentType(),
+                true,
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 

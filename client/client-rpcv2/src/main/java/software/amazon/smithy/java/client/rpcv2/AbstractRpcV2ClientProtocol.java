@@ -166,6 +166,7 @@ public abstract class AbstractRpcV2ClientProtocol extends HttpClientProtocol {
         return AwsEventEncoderFactory.forInputStream(operation,
                 codec(),
                 payloadMediaType,
+                true,
                 (e) -> new EventStreamingException("InternalServerException", "Internal Server Error"));
     }
 
