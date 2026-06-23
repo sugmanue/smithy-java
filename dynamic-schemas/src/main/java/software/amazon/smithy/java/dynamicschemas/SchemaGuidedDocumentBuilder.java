@@ -13,6 +13,7 @@ import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SchemaUtils;
 import software.amazon.smithy.java.core.schema.ShapeBuilder;
 import software.amazon.smithy.java.core.schema.TraitKey;
+import software.amazon.smithy.java.core.serde.SerializationException;
 import software.amazon.smithy.java.core.serde.ShapeDeserializer;
 import software.amazon.smithy.java.core.serde.document.Document;
 import software.amazon.smithy.java.core.serde.event.EventStream;
@@ -256,8 +257,12 @@ final class SchemaGuidedDocumentBuilder implements ShapeBuilder<StructDocument> 
 
         @Override
         public void accept(List<Document> state, ShapeDeserializer memberDeserializer) {
-            if (sparse && memberDeserializer.isNull()) {
-                state.add(memberDeserializer.readNull());
+            if (memberDeserializer.isNull()) {
+                if (sparse) {
+                    state.add(memberDeserializer.readNull());
+                } else {
+                    throw new SerializationException("Null value found in dense list: " + schema.id());
+                }
             } else {
                 state.add(deserializeValue(memberDeserializer, schema));
             }
@@ -270,8 +275,12 @@ final class SchemaGuidedDocumentBuilder implements ShapeBuilder<StructDocument> 
 
         @Override
         public void accept(Map<String, Document> state, String key, ShapeDeserializer memberDeserializer) {
-            if (sparse && memberDeserializer.isNull()) {
-                state.put(key, memberDeserializer.readNull());
+            if (memberDeserializer.isNull()) {
+                if (sparse) {
+                    state.put(key, memberDeserializer.readNull());
+                } else {
+                    throw new SerializationException("Null value found in dense map: " + schema.id());
+                }
             } else {
                 state.put(key, deserializeValue(memberDeserializer, schema));
             }
