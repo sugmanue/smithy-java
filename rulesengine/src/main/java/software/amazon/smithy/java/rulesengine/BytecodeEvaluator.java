@@ -5,12 +5,17 @@
 
 package software.amazon.smithy.java.rulesengine;
 
+import java.util.AbstractMap;
+import java.util.AbstractSet;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import software.amazon.smithy.java.context.Context;
 import software.amazon.smithy.java.endpoints.Endpoint;
 import software.amazon.smithy.java.endpoints.EndpointContext;
@@ -30,6 +35,8 @@ final class BytecodeEvaluator implements ConditionEvaluator {
 
     private final Bytecode bytecode;
     private final Object[] registers;
+    // Reused, zero-allocation live view over named registers, handed to a trace sink (one per evaluator).
+    private final RegisterView registerView;
     private final RulesExtension[] extensions;
     private Object[] tempArray = new Object[8];
     private int tempArraySize = 8;
@@ -49,6 +56,7 @@ final class BytecodeEvaluator implements ConditionEvaluator {
         this.bytecode = bytecode;
         this.extensions = extensions;
         this.registers = new Object[bytecode.getRegisterDefinitions().length];
+        this.registerView = new RegisterView(registers, bytecode.getInputRegisterMap());
         this.registerFiller = registerFiller;
         this.registerSink = new ContextProvider.RegisterSink(registers.length, bytecode.getInputRegisterMap());
     }
@@ -125,6 +133,62 @@ final class BytecodeEvaluator implements ConditionEvaluator {
             return null;
         }
         return resolveResult(ref - Bdd.RESULT_OFFSET);
+    }
+
+    /**
+     * Traced twin of {@link #evaluateBdd()}: same traversal, but reports each step to {@code sink}. Kept
+     * as a separate method so the fast path above stays free of any per-node trace branch; the resolver
+     * picks this only when a sink is present.
+     */
+    Endpoint evaluateBddTraced(BddTraceSink sink) {
+        BddTrace trace = sink.begin(bytecode, registerView);
+        if (trace == null) {
+            // Sampled out by the sink: run the untraced fast path.
+            return evaluateBdd();
+        }
+
+        int ref = bytecode.getBddRootRef();
+        int[] nodes = bytecode.getBddNodes();
+        byte[] condTypes = bytecode.conditionTypes;
+        int[] condOps = bytecode.conditionOperands;
+        Object[] regs = this.registers;
+        Object[] cpool = bytecode.getConstantPool();
+
+        while (Bdd.isNodeReference(ref)) {
+            int idx = ref > 0 ? ref - 1 : -ref - 1;
+            int base = idx * 3;
+            int condIdx = nodes[base];
+
+            boolean result = switch (condTypes[condIdx]) {
+                case Bytecode.COND_ISSET -> regs[condOps[condIdx]] != null;
+                case Bytecode.COND_IS_TRUE -> regs[condOps[condIdx]] == Boolean.TRUE;
+                case Bytecode.COND_IS_FALSE -> regs[condOps[condIdx]] == Boolean.FALSE;
+                case Bytecode.COND_NOT_SET -> regs[condOps[condIdx]] == null;
+                case Bytecode.COND_STRING_EQ_REG_CONST -> {
+                    int packed = condOps[condIdx];
+                    String s = (String) regs[packed & 0xFF];
+                    String expected = (String) cpool[packed >>> 8];
+                    yield s != null && s.equals(expected);
+                }
+                default -> test(condIdx);
+            };
+
+            // `branch` is the post-complement edge selector (true -> high, false -> low); `result` is the
+            // condition's own truth value. They differ only when the node ref is complemented.
+            boolean branch = result ^ (ref < 0);
+            trace.condition(condIdx, result, branch);
+            ref = branch ? nodes[base + 1] : nodes[base + 2];
+        }
+
+        if (Bdd.isTerminal(ref)) {
+            trace.result(-1);
+            return null;
+        }
+        int resultId = ref - Bdd.RESULT_OFFSET;
+        // The trace can read the live register view (inputs plus variables assigned during traversal)
+        // that drove this result during its result() callback.
+        trace.result(resultId);
+        return resolveResult(resultId);
     }
 
     public Endpoint resolveResult(int resultIndex) {
@@ -571,4 +635,82 @@ final class BytecodeEvaluator implements ConditionEvaluator {
         }
     }
 
+    /**
+     * Live, read-only {@link Map} view over the named (non-temp) registers, handed to a
+     * {@link BddTraceSink} without copying. {@code get(name)} is an O(1) index into the register array;
+     * the view instance is reused, so nothing is allocated per resolution. Unmapped names and null
+     * registers read as not-present, matching the original snapshot's non-null-entries semantics.
+     */
+    private static final class RegisterView extends AbstractMap<String, Object> {
+        private final Object[] registers;
+        private final Map<String, Integer> nameToIndex;
+        private Set<Entry<String, Object>> entrySet;
+
+        RegisterView(Object[] registers, Map<String, Integer> nameToIndex) {
+            this.registers = registers;
+            this.nameToIndex = nameToIndex;
+        }
+
+        @Override
+        public Object get(Object key) {
+            Integer idx = nameToIndex.get(key);
+            return idx == null ? null : registers[idx];
+        }
+
+        @Override
+        public boolean containsKey(Object key) {
+            Integer idx = nameToIndex.get(key);
+            return idx != null && registers[idx] != null;
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            Set<Entry<String, Object>> es = entrySet;
+            if (es == null) {
+                es = entrySet = new AbstractSet<>() {
+                    @Override
+                    public Iterator<Entry<String, Object>> iterator() {
+                        return new Iterator<>() {
+                            private final Iterator<Map.Entry<String, Integer>> it = nameToIndex.entrySet().iterator();
+                            private Entry<String, Object> next;
+
+                            @Override
+                            public boolean hasNext() {
+                                while (next == null && it.hasNext()) {
+                                    var e = it.next();
+                                    Object value = registers[e.getValue()];
+                                    if (value != null) {
+                                        next = new SimpleImmutableEntry<>(e.getKey(), value);
+                                    }
+                                }
+                                return next != null;
+                            }
+
+                            @Override
+                            public Entry<String, Object> next() {
+                                if (!hasNext()) {
+                                    throw new NoSuchElementException();
+                                }
+                                var result = next;
+                                next = null;
+                                return result;
+                            }
+                        };
+                    }
+
+                    @Override
+                    public int size() {
+                        int count = 0;
+                        for (int idx : nameToIndex.values()) {
+                            if (registers[idx] != null) {
+                                count++;
+                            }
+                        }
+                        return count;
+                    }
+                };
+            }
+            return es;
+        }
+    }
 }

@@ -6,14 +6,18 @@
 package software.amazon.smithy.java.rulesengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import software.amazon.smithy.java.context.Context;
@@ -61,7 +65,7 @@ class BytecodeEndpointResolverTest {
 
         EndpointResolverParams params = createParams("us-east-1", "my-bucket");
 
-        Endpoint endpoint = resolver.resolveEndpoint(params);
+        Endpoint endpoint = resolveBothWays(resolver, params);
 
         assertNotNull(endpoint);
         assertEquals("https://example.com", endpoint.uri().toString());
@@ -110,7 +114,7 @@ class BytecodeEndpointResolverTest {
 
         EndpointResolverParams params = createParams("us-west-2", "bucket", context);
 
-        Endpoint endpoint = resolver.resolveEndpoint(params);
+        Endpoint endpoint = resolveBothWays(resolver, params);
         assertEquals("https://custom.example.com", endpoint.uri().toString());
     }
 
@@ -139,7 +143,7 @@ class BytecodeEndpointResolverTest {
 
         EndpointResolverParams params = createParams("us-east-1", "bucket");
 
-        Endpoint endpoint = resolver.resolveEndpoint(params);
+        Endpoint endpoint = resolveBothWays(resolver, params);
         assertNull(endpoint);
     }
 
@@ -216,13 +220,13 @@ class BytecodeEndpointResolverTest {
 
         // Test with region provided
         EndpointResolverParams params = createParams("us-east-1", "bucket");
-        Endpoint endpoint = resolver.resolveEndpoint(params);
+        Endpoint endpoint = resolveBothWays(resolver, params);
         assertNotNull(endpoint);
         assertEquals("https://example.com", endpoint.uri().toString());
 
         // Test without region
         params = createParams(null, "bucket");
-        endpoint = resolver.resolveEndpoint(params);
+        endpoint = resolveBothWays(resolver, params);
         assertNull(endpoint); // Should return no match (result 0)
     }
 
@@ -287,6 +291,17 @@ class BytecodeEndpointResolverTest {
 
         var e = Assertions.assertThrows(RulesEvaluationError.class, () -> resolver.resolveEndpoint(params));
         assertTrue(e.getMessage().contains("bucket"));
+
+        // The traced path must fail the same way.
+        Context tracedContext = params.context().put(RulesEngineSettings.BDD_TRACE_SINK, (bc, p) -> NO_OP_TRACE);
+        EndpointResolverParams tracedParams = EndpointResolverParams.builder()
+                .operation(params.operation())
+                .inputValue(params.inputValue())
+                .context(tracedContext)
+                .build();
+        var tracedError = Assertions.assertThrows(RulesEvaluationError.class,
+                () -> resolver.resolveEndpoint(tracedParams));
+        assertTrue(tracedError.getMessage().contains("bucket"));
     }
 
     @Test
@@ -326,12 +341,241 @@ class BytecodeEndpointResolverTest {
         // Don't provide region, should use default
         EndpointResolverParams params = createParams(null, "my-bucket");
 
-        Endpoint endpoint = resolver.resolveEndpoint(params);
+        Endpoint endpoint = resolveBothWays(resolver, params);
         assertNotNull(endpoint);
         assertEquals("us-west-2/my-bucket", endpoint.uri().toString());
     }
 
+    @Test
+    void traceSinkRecordsConditionAndResultPath() {
+        // Same shape as testConditionalEndpoint: condition 0 = isSet(region); high -> result 1 (endpoint),
+        // low -> result 0 (no match).
+        Bytecode bc = conditionalRegionBytecode();
+        BytecodeEndpointResolver resolver = new BytecodeEndpointResolver(bc, List.of(), Map.of());
+
+        RecordingSink sink = new RecordingSink();
+        Context context = Context.create().put(RulesEngineSettings.BDD_TRACE_SINK, sink);
+        Endpoint endpoint = resolver.resolveEndpoint(createParams("us-east-1", "bucket", context));
+
+        assertNotNull(endpoint);
+        // init received the compiled program and the resolved inputs.
+        assertEquals(bc, sink.bytecode);
+        assertEquals("us-east-1", sink.inputs.get("region"));
+        // One condition evaluated: region is set -> true, and (uncomplemented node) the high edge taken.
+        assertEquals(1, sink.conditions.size());
+        assertEquals(0, sink.conditions.get(0).id);
+        assertTrue(sink.conditions.get(0).satisfied);
+        assertTrue(sink.conditions.get(0).branch);
+        // Terminated at result 1 with the variable snapshot available.
+        assertEquals(1, sink.resultId);
+        assertEquals("us-east-1", sink.variables.get("region"));
+    }
+
+    @Test
+    void traceSinkReportsNoMatchAsNegativeResult() {
+        Bytecode bc = conditionalRegionBytecode();
+        BytecodeEndpointResolver resolver = new BytecodeEndpointResolver(bc, List.of(), Map.of());
+
+        RecordingSink sink = new RecordingSink();
+        Context context = Context.create().put(RulesEngineSettings.BDD_TRACE_SINK, sink);
+        // No region -> condition false -> low edge -> result 0 (no match rule -> null endpoint).
+        Endpoint endpoint = resolver.resolveEndpoint(createParams(null, "bucket", context));
+
+        assertNull(endpoint);
+        assertEquals(1, sink.conditions.size());
+        assertFalse(sink.conditions.get(0).satisfied);
+        assertFalse(sink.conditions.get(0).branch);
+        // Result rule 0 is a no-match rule: resolver returns null, but the trace still reports the rule id.
+        assertEquals(0, sink.resultId);
+    }
+
+    @Test
+    void traceSinkMapViewHonorsMapContract() {
+        // Resolve with region set but bucket absent, and assert the Map view (custom AbstractMap) behaves
+        // like a Map: present key, absent key, key whose register is null, entrySet, and size. Asserted
+        // inside the callback because the view is live (must be read before resolution returns).
+        Bytecode bc = conditionalRegionBytecode();
+        BytecodeEndpointResolver resolver = new BytecodeEndpointResolver(bc, List.of(), Map.of());
+
+        boolean[] checked = {false};
+        BddTraceSink sink = (bytecode, p) -> {
+            // present
+            assertTrue(p.containsKey("region"));
+            assertEquals("us-east-1", p.get("region"));
+            // absent name (not a register at all)
+            assertFalse(p.containsKey("nope"));
+            assertNull(p.get("nope"));
+            // name whose register is unset reads as absent (bucket not provided)
+            assertFalse(p.containsKey("bucket"));
+            assertNull(p.get("bucket"));
+            // entrySet reflects only set registers, and size agrees
+            assertEquals(1, p.size());
+            assertEquals(Map.of("region", "us-east-1"),
+                    p.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+            checked[0] = true;
+            return NO_OP_TRACE;
+        };
+
+        Context context = Context.create().put(RulesEngineSettings.BDD_TRACE_SINK, sink);
+        resolver.resolveEndpoint(createParams("us-east-1", null, context));
+        assertTrue(checked[0], "begin was not invoked");
+    }
+
+    @Test
+    void traceSinkHoldsLiveViewReadableAtResult() {
+        // The view handed to begin() is live: the trace holds it and reads current register state during
+        // result() (zero-allocation contract; no need to re-pass it).
+        Bytecode bc = conditionalRegionBytecode();
+        BytecodeEndpointResolver resolver = new BytecodeEndpointResolver(bc, List.of(), Map.of());
+
+        Object[] readAtResult = new Object[1];
+        BddTraceSink sink = (bytecode, view) -> new BddTrace() {
+            @Override
+            public void condition(int conditionId, boolean satisfied, boolean branch) {}
+
+            @Override
+            public void result(int resultId) {
+                // Read the same held view at result time; it reflects current register state.
+                readAtResult[0] = view.get("region");
+            }
+        };
+
+        Context context = Context.create().put(RulesEngineSettings.BDD_TRACE_SINK, sink);
+        resolver.resolveEndpoint(createParams("us-east-1", "bucket", context));
+        assertEquals("us-east-1", readAtResult[0]);
+    }
+
+    @Test
+    void traceSinkSampledOutStillResolves() {
+        // begin() returning null (sampled out) must fall through to the untraced fast path.
+        Bytecode bc = conditionalRegionBytecode();
+        BytecodeEndpointResolver resolver = new BytecodeEndpointResolver(bc, List.of(), Map.of());
+
+        boolean[] beganCalled = {false};
+        BddTraceSink sink = (bytecode, view) -> {
+            beganCalled[0] = true;
+            return null; // sample out
+        };
+
+        Context context = Context.create().put(RulesEngineSettings.BDD_TRACE_SINK, sink);
+        Endpoint endpoint = resolver.resolveEndpoint(createParams("us-east-1", "bucket", context));
+        assertTrue(beganCalled[0], "begin should be consulted");
+        assertNotNull(endpoint);
+        assertEquals("https://example.com", endpoint.uri().toString());
+    }
+
+    @Test
+    void noTraceSinkStillResolves() {
+        // Sanity: with no sink on the context, resolution still returns the right endpoint (fast path).
+        Bytecode bc = conditionalRegionBytecode();
+        BytecodeEndpointResolver resolver = new BytecodeEndpointResolver(bc, List.of(), Map.of());
+        Endpoint endpoint = resolver.resolveEndpoint(createParams("us-east-1", "bucket"));
+        assertNotNull(endpoint);
+        assertEquals("https://example.com", endpoint.uri().toString());
+    }
+
+    /** Bytecode: condition 0 = isSet(region); if set return endpoint (result 1), else no match (result 0). */
+    private static Bytecode conditionalRegionBytecode() {
+        byte[] conditionBytecode = {Opcodes.TEST_REGISTER_ISSET, 0, Opcodes.RETURN_VALUE};
+        byte[] noMatchBytecode = {Opcodes.LOAD_CONST, 0, Opcodes.RETURN_VALUE};
+        byte[] endpointBytecode = {Opcodes.LOAD_CONST, 1, Opcodes.RETURN_ENDPOINT, 0};
+
+        byte[] bytecode = new byte[conditionBytecode.length + noMatchBytecode.length + endpointBytecode.length];
+        System.arraycopy(conditionBytecode, 0, bytecode, 0, conditionBytecode.length);
+        System.arraycopy(noMatchBytecode, 0, bytecode, conditionBytecode.length, noMatchBytecode.length);
+        System.arraycopy(endpointBytecode,
+                0,
+                bytecode,
+                conditionBytecode.length + noMatchBytecode.length,
+                endpointBytecode.length);
+
+        return new Bytecode(
+                bytecode,
+                new int[] {0},
+                new int[] {conditionBytecode.length, conditionBytecode.length + noMatchBytecode.length},
+                new RegisterDefinition[] {
+                        new RegisterDefinition("region", false, null, null, false),
+                        new RegisterDefinition("bucket", false, null, null, false)
+                },
+                new Object[] {null, "https://example.com"},
+                new RulesFunction[0],
+                new int[] {-1, -1, -1, 0, 100_000_001, 100_000_000},
+                2);
+    }
+
+    /** A trace that records nothing, for tests that only care about begin()'s callback. */
+    private static final BddTrace NO_OP_TRACE = new BddTrace() {
+        @Override
+        public void condition(int conditionId, boolean satisfied, boolean branch) {}
+
+        @Override
+        public void result(int resultId) {}
+    };
+
+    /** Sink that begins a single recorder and remembers it, so tests can assert on what it captured. */
+    private static final class RecordingSink implements BddTraceSink {
+        private record Cond(int id, boolean satisfied, boolean branch) {}
+
+        Bytecode bytecode;
+        Map<String, Object> inputs;
+        final List<Cond> conditions = new ArrayList<>();
+        int resultId = Integer.MIN_VALUE;
+        Map<String, Object> variables;
+        // The live view handed to begin(); read it during result() for the final variable set.
+        private Map<String, Object> liveView;
+
+        @Override
+        public BddTrace begin(Bytecode bytecode, Map<String, Object> parameters) {
+            this.bytecode = bytecode;
+            this.liveView = parameters;
+            // The view is live; copy it to assert on after resolution returns.
+            this.inputs = new LinkedHashMap<>(parameters);
+            return new BddTrace() {
+                @Override
+                public void condition(int conditionId, boolean satisfied, boolean branch) {
+                    conditions.add(new Cond(conditionId, satisfied, branch));
+                }
+
+                @Override
+                public void result(int resultId) {
+                    RecordingSink.this.resultId = resultId;
+                    variables = new LinkedHashMap<>(liveView); // live view; copy to retain
+                }
+            };
+        }
+    }
+
     // Helper methods
+
+    /**
+     * Resolves {@code params} twice: once untraced ({@link BytecodeEvaluator#evaluateBdd}) and once with
+     * a no-op trace sink attached ({@link BytecodeEvaluator#evaluateBddTraced}), asserts both produce the
+     * same endpoint, and returns it. The two methods duplicate the BDD traversal loop, so routing the
+     * outcome assertions through here guards against them de-syncing.
+     */
+    private static Endpoint resolveBothWays(BytecodeEndpointResolver resolver, EndpointResolverParams params) {
+        Endpoint untraced = resolver.resolveEndpoint(params);
+
+        // Same inputs, but with a sink whose begin() returns a real trace so the traced loop is exercised
+        // (returning null would sample out and fall back to the untraced loop, defeating the comparison).
+        Context tracedContext = params.context().put(RulesEngineSettings.BDD_TRACE_SINK, (bc, p) -> NO_OP_TRACE);
+        EndpointResolverParams tracedParams = EndpointResolverParams.builder()
+                .operation(params.operation())
+                .inputValue(params.inputValue())
+                .context(tracedContext)
+                .build();
+        Endpoint traced = resolver.resolveEndpoint(tracedParams);
+
+        if (untraced == null) {
+            assertNull(traced, "traced path resolved an endpoint but untraced did not");
+        } else {
+            assertNotNull(traced, "untraced path resolved an endpoint but traced did not");
+            assertEquals(untraced.uri().toString(),
+                    traced.uri().toString(),
+                    "traced and untraced paths resolved different endpoints");
+        }
+        return untraced;
+    }
 
     private EndpointResolverParams createParams(String region, String bucket) {
         return createParams(region, bucket, Context.create());
