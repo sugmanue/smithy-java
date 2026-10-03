@@ -30,6 +30,7 @@ import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
+import software.amazon.smithy.java.io.ByteBufferUtils;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
@@ -120,11 +121,19 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     ) {
         var out = new ByteArrayOutputStream();
         var baseSerializer = createSerializer(out, codec, headers, emitEmptyPayload, contentEncodingHolder);
-        if (isInitialRequest(item.schema())) {
+        var ext = item.schema().getExtension(EventStreamSchemaExtensions.KEY);
+        if (ext != null ? ext.isInitialEvent() : isInitialRequest(item.schema())) {
             // The initial event is serialized fully instead of just a single member as for events.
             typeHolder.set(initialEventType.value());
-            ShapeUtils.withFilteredMembers(item.schema(), item, AwsEventShapeEncoder::excludeEventStreamMember)
-                    .serialize(baseSerializer);
+            SerializableStruct filtered = ext != null
+                    ? new EventStreamSchemaExtensions.BindingExcludingStruct(
+                            item,
+                            ext.bindings(),
+                            EventStreamSchemaExtensions.Binding.STREAMING)
+                    : ShapeUtils.withFilteredMembers(item.schema(),
+                            item,
+                            AwsEventShapeEncoder::excludeEventStreamMember);
+            filtered.serialize(baseSerializer);
         } else {
             var serializer = new SpecificShapeSerializer() {
                 @Override
@@ -315,6 +324,12 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
         @Override
         public void writeStruct(Schema schema, SerializableStruct struct) {
+            var ext = schema.getExtension(EventStreamSchemaExtensions.KEY);
+            if (ext != null) {
+                writeStructCached(schema, struct, ext);
+                return;
+            }
+            // Fallback: no cached extension — walk members by trait (original behavior).
             if (hasEventPayloadMember(schema)) {
                 try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
                     ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isEventPayload)
@@ -332,6 +347,45 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             }
             ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isHeadersMember)
                     .serialize(headerSerializer);
+        }
+
+        /**
+         * Cached hot path: route members to payload / event-payload / headers using the precomputed
+         * {@link EventStreamSchemaExtensions.Binding} table instead of re-walking member traits per frame.
+         */
+        private void writeStructCached(
+                Schema schema,
+                SerializableStruct struct,
+                EventStreamSchemaExtensions.EventStreamExt ext
+        ) {
+            var bindings = ext.bindings();
+            if (ext.hasEventPayload()) {
+                try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
+                    new EventStreamSchemaExtensions.BindingFilteredStruct(
+                            struct,
+                            bindings,
+                            EventStreamSchemaExtensions.Binding.EVENT_PAYLOAD).serializeMembers(serializer);
+                }
+            } else if (emitEmptyPayload || ext.hasPayloadMembers()) {
+                // Pooled path: serialize the body members via codec.serialize(), which uses the codec's
+                // pooled serializer + reused buffer instead of allocating a fresh ByteArrayOutputStream and
+                // serializer per frame. The returned ByteBuffer is written into the shared payload stream.
+                var body = codec.serialize(new EventStreamSchemaExtensions.BindingFilteredStruct(
+                        struct,
+                        bindings,
+                        EventStreamSchemaExtensions.Binding.PAYLOAD));
+                try {
+                    ByteBufferUtils.byteBufferInputStream(body).transferTo(out);
+                } catch (IOException e) {
+                    throw new SerializationException(e);
+                }
+            } else {
+                contentTypeHolder.set(null);
+            }
+            new EventStreamSchemaExtensions.BindingFilteredStruct(
+                    struct,
+                    bindings,
+                    EventStreamSchemaExtensions.Binding.HEADER).serialize(headerSerializer);
         }
     }
 
