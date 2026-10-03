@@ -30,6 +30,7 @@ import software.amazon.smithy.java.core.serde.ShapeSerializer;
 import software.amazon.smithy.java.core.serde.SpecificShapeSerializer;
 import software.amazon.smithy.java.core.serde.event.EventEncoder;
 import software.amazon.smithy.java.core.serde.event.EventStreamingException;
+import software.amazon.smithy.java.io.ByteBufferUtils;
 import software.amazon.smithy.model.shapes.ShapeId;
 
 /**
@@ -120,11 +121,12 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     ) {
         var out = new ByteArrayOutputStream();
         var baseSerializer = createSerializer(out, codec, headers, emitEmptyPayload, contentEncodingHolder);
-        if (isInitialRequest(item.schema())) {
+        var ext = item.schema().getExtension(EventStreamSchemaExtensions.KEY);
+        if (isInitialRequest(ext, item.schema())) {
             // The initial event is serialized fully instead of just a single member as for events.
             typeHolder.set(initialEventType.value());
-            ShapeUtils.withFilteredMembers(item.schema(), item, AwsEventShapeEncoder::excludeEventStreamMember)
-                    .serialize(baseSerializer);
+            SerializableStruct filtered = filteredForInitialRequest(ext, item);
+            filtered.serialize(baseSerializer);
         } else {
             var serializer = new SpecificShapeSerializer() {
                 @Override
@@ -196,10 +198,28 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         return new EventSerializer(out, codec, eventSerializer, emitEmptyPayload, contentTypeHolder);
     }
 
+    static SerializableStruct filteredForInitialRequest(
+            EventStreamSchemaExtensions.EventStreamExt ext,
+            SerializableStruct item
+    ) {
+        if (ext != null) {
+            return new EventStreamSchemaExtensions.BindingExcludingStruct(
+                    item,
+                    ext.bindings(),
+                    EventStreamSchemaExtensions.Binding.STREAMING);
+        }
+        return ShapeUtils.withFilteredMembers(item.schema(),
+                item,
+                AwsEventShapeEncoder::excludeEventStreamMember);
+    }
+
     /**
      * Returns true if the given schema is for the initial event type.
      */
-    static boolean isInitialRequest(Schema schema) {
+    static boolean isInitialRequest(EventStreamSchemaExtensions.EventStreamExt ext, Schema schema) {
+        if (ext != null) {
+            return ext.isInitialEvent();
+        }
         for (var member : schema.members()) {
             if (isEventStreamMember(member)) {
                 return true;
@@ -315,6 +335,12 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
         @Override
         public void writeStruct(Schema schema, SerializableStruct struct) {
+            var ext = schema.getExtension(EventStreamSchemaExtensions.KEY);
+            if (ext != null) {
+                writeStructWithExtension(struct, ext);
+                return;
+            }
+            // Fallback: no cached extension — walk members by trait (original behavior).
             if (hasEventPayloadMember(schema)) {
                 try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
                     ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isEventPayload)
@@ -332,6 +358,46 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
             }
             ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isHeadersMember)
                     .serialize(headerSerializer);
+        }
+
+        /**
+         * Route members to payload / event-payload / headers using the precomputed
+         * {@link EventStreamSchemaExtensions.Binding} table instead of re-walking member traits per frame.
+         */
+        private void writeStructWithExtension(
+                SerializableStruct struct,
+                EventStreamSchemaExtensions.EventStreamExt ext
+        ) {
+            var bindings = ext.bindings();
+            if (ext.hasEventPayload()) {
+                try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
+                    new EventStreamSchemaExtensions.BindingFilteredStruct(
+                            struct,
+                            bindings,
+                            EventStreamSchemaExtensions.Binding.EVENT_PAYLOAD).serializeMembers(serializer);
+                }
+            } else if (emitEmptyPayload || ext.hasPayloadMembers()) {
+                // Serialize the body via codec.serialize() rather than createSerializer(out). For codecs
+                // with a pooled serialize() (Smithy JSON, CBOR) this reuses a pooled serializer and buffer
+                // across frames.
+                var body = codec.serialize(new EventStreamSchemaExtensions.BindingFilteredStruct(
+                        struct,
+                        bindings,
+                        EventStreamSchemaExtensions.Binding.PAYLOAD));
+                try {
+                    ByteBufferUtils.byteBufferInputStream(body).transferTo(out);
+                } catch (IOException e) {
+                    throw new SerializationException(e);
+                }
+            } else {
+                contentTypeHolder.set(null);
+            }
+            if (ext.headerMembers().length > 0) {
+                new EventStreamSchemaExtensions.BindingFilteredStruct(
+                        struct,
+                        bindings,
+                        EventStreamSchemaExtensions.Binding.HEADER).serialize(headerSerializer);
+            }
         }
     }
 
