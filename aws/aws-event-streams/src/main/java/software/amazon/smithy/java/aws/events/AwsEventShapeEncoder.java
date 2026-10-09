@@ -21,7 +21,6 @@ import software.amazon.eventstream.Message;
 import software.amazon.smithy.java.core.error.ModeledException;
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SerializableStruct;
-import software.amazon.smithy.java.core.schema.ShapeUtils;
 import software.amazon.smithy.java.core.schema.TraitKey;
 import software.amazon.smithy.java.core.serde.Codec;
 import software.amazon.smithy.java.core.serde.InterceptingSerializer;
@@ -121,12 +120,14 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
     ) {
         var out = new ByteArrayOutputStream();
         var baseSerializer = createSerializer(out, codec, headers, emitEmptyPayload, contentEncodingHolder);
-        var ext = item.schema().getExtension(EventStreamSchemaExtensions.KEY);
-        if (isInitialRequest(ext, item.schema())) {
+        var ext = EventStreamSchemaExtensions.extensionOf(item.schema());
+        if (ext.isInitialEvent()) {
             // The initial event is serialized fully instead of just a single member as for events.
             typeHolder.set(initialEventType.value());
-            SerializableStruct filtered = filteredForInitialRequest(ext, item);
-            filtered.serialize(baseSerializer);
+            new EventStreamSchemaExtensions.BindingExcludingStruct(
+                    item,
+                    ext.bindings(),
+                    EventStreamSchemaExtensions.Binding.STREAMING).serialize(baseSerializer);
         } else {
             var serializer = new SpecificShapeSerializer() {
                 @Override
@@ -198,115 +199,6 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
         return new EventSerializer(out, codec, eventSerializer, emitEmptyPayload, contentTypeHolder);
     }
 
-    static SerializableStruct filteredForInitialRequest(
-            EventStreamSchemaExtensions.EventStreamExt ext,
-            SerializableStruct item
-    ) {
-        if (ext != null) {
-            return new EventStreamSchemaExtensions.BindingExcludingStruct(
-                    item,
-                    ext.bindings(),
-                    EventStreamSchemaExtensions.Binding.STREAMING);
-        }
-        return ShapeUtils.withFilteredMembers(item.schema(),
-                item,
-                AwsEventShapeEncoder::excludeEventStreamMember);
-    }
-
-    /**
-     * Returns true if the given schema is for the initial event type.
-     */
-    static boolean isInitialRequest(EventStreamSchemaExtensions.EventStreamExt ext, Schema schema) {
-        if (ext != null) {
-            return ext.isInitialEvent();
-        }
-        for (var member : schema.members()) {
-            if (isEventStreamMember(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if the schema not the event stream member for the initial request.
-     */
-    static boolean excludeEventStreamMember(Schema schema) {
-        return !isEventStreamMember(schema);
-    }
-
-    /**
-     * Returns true if this is a event stream members.
-     */
-    static boolean isEventStreamMember(Schema schema) {
-        if (schema.isMember() && schema.memberTarget().hasTrait(TraitKey.STREAMING_TRAIT)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if the schema have any members that ought to be serialized in
-     * the event payload.
-     */
-    static boolean hasPayloadMembers(Schema struct) {
-        for (var member : struct.members()) {
-            if (isPayloadMember(member)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if the schema is a member that ought to be serialized in the
-     * event payload.
-     */
-    static boolean isPayloadMember(Schema member) {
-        if (isHeadersMember(member)) {
-            return false;
-        }
-        if (isEventStreamMember(member)) {
-            return false;
-        }
-        if (isEventPayload(member)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * Returns true if the schema has a member that is directly serialized as the
-     * payload of the event. Such member has the `@eventPayload` trait attached.
-     */
-    static boolean hasEventPayloadMember(Schema struct) {
-        for (var member : struct.members()) {
-            if (member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if the schema is a member that is directly serialized as the
-     * payload of the event. This depends on the presence of the trait `@eventPayload`.
-     */
-    static boolean isEventPayload(Schema member) {
-        if (member.hasTrait(TraitKey.EVENT_PAYLOAD_TRAIT)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Returns true if the schema is a member that is serialized in the headers of the event.
-     * This depends on the presence of the trait `@eventHeader`.
-     */
-    static boolean isHeadersMember(Schema member) {
-        return member.hasTrait(TraitKey.EVENT_HEADER_TRAIT);
-    }
-
     /**
      * Serializes an event, class implements the logic to serialize into the headers,
      * or the payload of the message depending on the presence of the event serialization
@@ -335,39 +227,7 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
 
         @Override
         public void writeStruct(Schema schema, SerializableStruct struct) {
-            var ext = schema.getExtension(EventStreamSchemaExtensions.KEY);
-            if (ext != null) {
-                writeStructWithExtension(struct, ext);
-                return;
-            }
-            // Fallback: no cached extension — walk members by trait (original behavior).
-            if (hasEventPayloadMember(schema)) {
-                try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
-                    ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isEventPayload)
-                            .serializeMembers(serializer);
-                }
-            } else {
-                if (emitEmptyPayload || hasPayloadMembers(schema)) {
-                    try (var serializer = codec.createSerializer(out)) {
-                        ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isPayloadMember)
-                                .serialize(serializer);
-                    }
-                } else {
-                    contentTypeHolder.set(null);
-                }
-            }
-            ShapeUtils.withFilteredMembers(schema, struct, AwsEventShapeEncoder::isHeadersMember)
-                    .serialize(headerSerializer);
-        }
-
-        /**
-         * Route members to payload / event-payload / headers using the precomputed
-         * {@link EventStreamSchemaExtensions.Binding} table instead of re-walking member traits per frame.
-         */
-        private void writeStructWithExtension(
-                SerializableStruct struct,
-                EventStreamSchemaExtensions.EventStreamExt ext
-        ) {
+            var ext = EventStreamSchemaExtensions.extensionOf(schema);
             var bindings = ext.bindings();
             if (ext.hasEventPayload()) {
                 try (var serializer = new EventPayloadSerializer(out, codec, contentTypeHolder)) {
@@ -385,14 +245,14 @@ final class AwsEventShapeEncoder implements EventEncoder<AwsEventFrame> {
                         bindings,
                         EventStreamSchemaExtensions.Binding.PAYLOAD));
                 try {
-                    ByteBufferUtils.byteBufferInputStream(body).transferTo(out);
+                    out.write(ByteBufferUtils.getBytes(body));
                 } catch (IOException e) {
                     throw new SerializationException(e);
                 }
             } else {
                 contentTypeHolder.set(null);
             }
-            if (ext.headerMembers().length > 0) {
+            if (ext.hasHeaderMembers()) {
                 new EventStreamSchemaExtensions.BindingFilteredStruct(
                         struct,
                         bindings,

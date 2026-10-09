@@ -18,16 +18,8 @@ dependencies {
     api("software.amazon.eventstream:eventstream:1.0.1")
     testImplementation(project(":codecs:json-codec"))
 
-    // Benchmarks reuse the hand-written event-stream fixtures in src/test
-    // (TestOperation, TestEventStream, and the per-event structs) and drive
-    // the package-private encoder/decoder directly, so the jmh source set
-    // depends on the test source set's output and classpath.
-    jmhImplementation(project(":codecs:json-codec"))
-    jmhImplementation(sourceSets["test"].output)
-    jmhImplementation(sourceSets["test"].runtimeClasspath)
-}
-
-tasks.named("compileJmhJava") {
-    dependsOn("compileTestJava")
-    dependsOn(":codecs:json-codec:shadowJar")
+    // Benchmarks reuse the hand-written event-stream fixtures in src/test (TestOperation, TestEventStream,
+    // and the per-event structs) and drive the package-private encoder/decoder directly. The jmh source set
+    // already includes the test source set and its classpath via the jmh plugin.
+    jmhImplementation(project(":codecs:json-codec", configuration = "shadow"))
 }

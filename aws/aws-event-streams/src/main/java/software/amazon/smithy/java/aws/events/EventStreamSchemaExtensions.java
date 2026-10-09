@@ -7,6 +7,7 @@ package software.amazon.smithy.java.aws.events;
 
 import java.util.ArrayList;
 import java.util.List;
+
 import software.amazon.smithy.java.core.schema.Schema;
 import software.amazon.smithy.java.core.schema.SchemaExtensionKey;
 import software.amazon.smithy.java.core.schema.SchemaExtensionProvider;
@@ -79,8 +80,8 @@ public final class EventStreamSchemaExtensions
      *
      * @param eventPayloadMember the single {@code @eventPayload} member, or {@code null} if none.
      * @param headerMembers      members carrying {@code @eventHeader} (empty if none).
-     * @param payloadMembers     members serialized into the codec body: everything that is neither a header
-     *                           member nor the event-payload member (empty if none).
+     * @param hasPayloadMembers  whether any member is serialized into the codec body (neither a header member
+     *                           nor the event-payload member).
      * @param streamingMember    the member whose target carries {@code @streaming} (the event-stream member of an
      *                           initial-request/response struct), or {@code null} if none.
      * @param bindings           per-member {@link Binding} indexed by {@link Schema#memberIndex()}.
@@ -88,7 +89,7 @@ public final class EventStreamSchemaExtensions
     public record EventStreamExt(
             Schema eventPayloadMember,
             Schema[] headerMembers,
-            Schema[] payloadMembers,
+            boolean hasPayloadMembers,
             Schema streamingMember,
             Binding[] bindings) {
 
@@ -100,10 +101,10 @@ public final class EventStreamSchemaExtensions
         }
 
         /**
-         * Whether this struct has any member serialized into the codec body.
+         * Whether this struct has any {@code @eventHeader} member.
          */
-        boolean hasPayloadMembers() {
-            return payloadMembers.length > 0;
+        boolean hasHeaderMembers() {
+            return headerMembers.length > 0;
         }
 
         /**
@@ -119,8 +120,26 @@ public final class EventStreamSchemaExtensions
         return KEY;
     }
 
+    /**
+     * Look up the {@link EventStreamExt} for an event struct schema. The provider populates every structure
+     * and union, so a null here means the provider was not registered or the schema is not a struct/union;
+     * either is a programming error, surfaced as an {@link IllegalStateException} rather than a bare NPE.
+     */
+    static EventStreamExt extensionOf(Schema schema) {
+        var ext = schema.getExtension(KEY);
+        if (ext == null) {
+            throw new IllegalStateException("Schema " + schema.id() + " has no event-stream extension");
+        }
+        return ext;
+    }
+
     @Override
     public EventStreamExt provide(Schema schema) {
+        // The encoder looks up the extension via the union member schema while the decoder uses the member's
+        // target. Delegate members to their target so the data is computed and cached once, on the target.
+        if (schema.isMember()) {
+            return schema.memberTarget().getExtension(KEY);
+        }
         var type = schema.type();
         if (type != ShapeType.STRUCTURE && type != ShapeType.UNION) {
             return null;
@@ -129,14 +148,10 @@ public final class EventStreamSchemaExtensions
         Schema eventPayloadMember = null;
         Schema streamingMember = null;
         List<Schema> headerMembers = null;
-        List<Schema> payloadMembers = null;
+        int payloadMemberCount = 0;
 
         var members = schema.members();
-        int maxIndex = 0;
-        for (Schema member : members) {
-            maxIndex = Math.max(maxIndex, member.memberIndex());
-        }
-        Binding[] bindings = members.isEmpty() ? NO_BINDINGS : new Binding[maxIndex + 1];
+        Binding[] bindings = members.isEmpty() ? NO_BINDINGS : new Binding[members.size()];
 
         for (Schema member : members) {
             int idx = member.memberIndex();
@@ -158,10 +173,7 @@ public final class EventStreamSchemaExtensions
                 headerMembers.add(member);
                 bindings[idx] = Binding.HEADER;
             } else {
-                if (payloadMembers == null) {
-                    payloadMembers = new ArrayList<>();
-                }
-                payloadMembers.add(member);
+                payloadMemberCount++;
                 bindings[idx] = Binding.PAYLOAD;
             }
         }
@@ -169,7 +181,7 @@ public final class EventStreamSchemaExtensions
         return new EventStreamExt(
                 eventPayloadMember,
                 toArray(headerMembers),
-                toArray(payloadMembers),
+                payloadMemberCount > 0,
                 streamingMember,
                 bindings);
     }

@@ -48,8 +48,8 @@ class EventStreamSchemaExtensionsTest {
         assertFalse(ext.hasEventPayload());
         assertFalse(ext.isInitialEvent());
         assertTrue(ext.hasPayloadMembers());
+        assertFalse(ext.hasHeaderMembers());
         assertArrayEquals(new String[0], memberNames(ext.headerMembers()));
-        assertArrayEquals(new String[] {"foo"}, memberNames(ext.payloadMembers()));
     }
 
     @Test
@@ -60,8 +60,8 @@ class EventStreamSchemaExtensionsTest {
         assertNotNull(ext);
         assertNull(ext.eventPayloadMember());
         assertFalse(ext.hasPayloadMembers());
+        assertTrue(ext.hasHeaderMembers());
         assertArrayEquals(new String[] {"sequenceNum"}, memberNames(ext.headerMembers()));
-        assertArrayEquals(new String[0], memberNames(ext.payloadMembers()));
     }
 
     @Test
@@ -73,7 +73,6 @@ class EventStreamSchemaExtensionsTest {
         assertNull(ext.eventPayloadMember());
         assertTrue(ext.hasPayloadMembers());
         assertArrayEquals(new String[] {"intMember"}, memberNames(ext.headerMembers()));
-        assertArrayEquals(new String[] {"stringMember"}, memberNames(ext.payloadMembers()));
     }
 
     @Test
@@ -107,9 +106,23 @@ class EventStreamSchemaExtensionsTest {
         assertNotNull(ext);
         assertTrue(ext.isInitialEvent());
         assertEquals("stream", ext.streamingMember().memberName());
-        // The streaming member is excluded from both groups.
+        // The streaming member is excluded from both groups; headerString and inputStringMember remain.
         assertArrayEquals(new String[] {"headerString"}, memberNames(ext.headerMembers()));
-        assertArrayEquals(new String[] {"inputStringMember"}, memberNames(ext.payloadMembers()));
+        assertTrue(ext.hasPayloadMembers());
+    }
+
+    @Test
+    void memberSchemaDelegatesToTarget() {
+        // Looking up the extension on a union member returns the same instance as its target struct, so
+        // the data is computed and cached once (encoder keys by member, decoder by target).
+        var streamMember = TestOperationInput.$SCHEMA.member("stream");
+        var unionMember = streamMember.memberTarget().member("structureMember");
+
+        var viaMember = unionMember.getExtension(EventStreamSchemaExtensions.KEY);
+        var viaTarget = unionMember.memberTarget().getExtension(EventStreamSchemaExtensions.KEY);
+
+        assertNotNull(viaMember);
+        assertSame(viaTarget, viaMember);
     }
 
     @Test
